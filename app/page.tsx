@@ -6,11 +6,12 @@ import { supabase, Church } from '@/lib/supabase'
 
 const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false })
 
-const PARISHES = ['Todas', 'Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet']
+const PARISHES = ['All', 'Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet']
+const ALL_OPTION = 'All'
 
 export default function Home() {
   const [churches, setChurches] = useState<Church[]>([])
-  const [parish, setParish] = useState('Todas')
+  const [parish, setParish] = useState(ALL_OPTION)
   const [onlyDistribution, setOnlyDistribution] = useState(false)
   const [selected, setSelected] = useState<Church | null>(null)
   const [loading, setLoading] = useState(true)
@@ -20,7 +21,7 @@ export default function Home() {
   const fetchChurches = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('churches').select('*').order('parish').order('name')
-    if (parish !== 'Todas') q = q.eq('parish', parish)
+    if (parish !== ALL_OPTION) q = q.eq('parish', parish)
     if (onlyDistribution) q = q.eq('is_distribution_center', true)
     const { data } = await q
     setChurches(data || [])
@@ -58,23 +59,22 @@ export default function Home() {
       {/* Header */}
       <header className="bg-blue-900 text-white px-4 py-3 flex items-center justify-between shadow-lg z-10">
         <div>
-          <h1 className="text-lg font-bold">⛪ Iglesias La Guaira</h1>
-          <p className="text-blue-200 text-xs">Centros de Distribución</p>
+          <h1 className="text-lg font-bold">⛪ La Guaira Churches</h1>
+          <p className="text-blue-200 text-xs">Distribution Centers</p>
         </div>
         <div className="text-right text-sm">
-          <div className="text-white font-semibold">{churches.length} iglesias</div>
-          <div className="text-red-300 text-xs">🔴 {distCount} centros de distribución</div>
+          <div className="text-white font-semibold">{churches.length} churches</div>
+          <div className="text-red-300 text-xs">🔴 {distCount} distribution centers</div>
         </div>
       </header>
 
       {/* Filters */}
       <div className="bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm z-10">
-        {/* Search */}
         <div className="relative">
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
             type="text"
-            placeholder="Buscar iglesia o pastor..."
+            placeholder="Search church or pastor..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="border border-gray-300 rounded-lg pl-8 pr-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -99,13 +99,13 @@ export default function Home() {
             onChange={e => setOnlyDistribution(e.target.checked)}
             className="w-4 h-4 accent-red-600"
           />
-          <span>Solo centros</span>
+          <span>Distribution only</span>
         </label>
 
         <div className="ml-auto flex gap-3 text-xs text-gray-500">
-          <span className="flex items-center gap-1"><span className="text-red-600 text-base">📍</span> Distribución</span>
-          <span className="flex items-center gap-1"><span className="text-blue-600 text-base">📍</span> Validada</span>
-          <span className="flex items-center gap-1"><span className="text-gray-400 text-base">📍</span> Pendiente</span>
+          <span className="flex items-center gap-1"><span className="text-red-600 text-base">📍</span> Distribution</span>
+          <span className="flex items-center gap-1"><span className="text-blue-600 text-base">📍</span> Validated</span>
+          <span className="flex items-center gap-1"><span className="text-gray-400 text-base">📍</span> Pending</span>
         </div>
       </div>
 
@@ -115,13 +115,13 @@ export default function Home() {
         <div className="flex-1 relative">
           {loading ? (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-20">
-              <div className="text-gray-500 text-sm">Cargando mapa...</div>
+              <div className="text-gray-500 text-sm">Loading map...</div>
             </div>
           ) : (
             <>
               {settingLocationFor && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-sm font-semibold shadow-lg">
-                  📍 Haz clic en el mapa para ubicar: <strong>{settingLocationFor.name}</strong>
+                  📍 Click on the map to pin: <strong>{settingLocationFor.name}</strong>
                   <button onClick={() => setSettingLocationFor(null)} className="ml-3 text-yellow-700 hover:text-yellow-900">✕</button>
                 </div>
               )}
@@ -136,36 +136,36 @@ export default function Home() {
           )}
         </div>
 
-        {/* Sidebar panel */}
+        {/* Sidebar */}
         <div className="w-72 bg-white border-l overflow-y-auto flex flex-col">
           {selected ? (
             <div className="p-4">
-              <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Volver a lista</button>
+              <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Back to list</button>
               <div className="flex gap-2 flex-wrap mb-3">
                 <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${selected.is_distribution_center ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                  {selected.is_distribution_center ? '🔴 Centro de Distribución' : '🔵 Iglesia'}
+                  {selected.is_distribution_center ? '🔴 Distribution Center' : '🔵 Church'}
                 </div>
                 <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${selected.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                  {selected.geocode_status === 'validado' ? '📍 Ubicación validada' : '⏳ Ubicación pendiente'}
+                  {selected.geocode_status === 'validado' ? '📍 Location validated' : '⏳ Location pending'}
                 </div>
               </div>
               <h2 className="font-bold text-gray-900 text-base mb-1">{selected.name}</h2>
               {selected.pastor_name && <p className="text-gray-600 text-sm mb-3">👤 {selected.pastor_name}</p>}
               <div className="space-y-2 text-sm">
                 <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parroquia</div>
+                  <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parish</div>
                   <div className="text-gray-800">{selected.parish}</div>
                 </div>
                 {selected.phone && (
                   <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Teléfono</div>
+                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Phone</div>
                     <a href={`tel:+58${selected.phone}`} className="text-blue-600 hover:underline">+58 {selected.phone}</a>
                     <a href={`https://wa.me/58${selected.phone}`} target="_blank" rel="noreferrer" className="ml-3 text-green-600 text-xs hover:underline">WhatsApp →</a>
                   </div>
                 )}
                 {selected.email && (
                   <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Correo</div>
+                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Email</div>
                     <a href={`mailto:${selected.email}`} className="text-blue-600 hover:underline break-all">{selected.email}</a>
                   </div>
                 )}
@@ -174,21 +174,21 @@ export default function Home() {
                 onClick={() => toggleDistribution(selected)}
                 className={`mt-4 w-full py-2 rounded-lg text-sm font-medium transition-colors ${selected.is_distribution_center ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-red-600 text-white hover:bg-red-700'}`}
               >
-                {selected.is_distribution_center ? 'Quitar como centro de distribución' : '🔴 Marcar como centro de distribución'}
+                {selected.is_distribution_center ? 'Remove as distribution center' : '🔴 Mark as distribution center'}
               </button>
               {selected.geocode_status !== 'validado' && (
                 <button
                   onClick={() => setSettingLocationFor(selected)}
                   className="mt-2 w-full py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors"
                 >
-                  📍 Ubicar manualmente en el mapa
+                  📍 Pin location manually on map
                 </button>
               )}
             </div>
           ) : (
             <div className="divide-y">
               <div className="p-3 text-xs text-gray-500 uppercase font-semibold bg-gray-50">
-                {filtered.length} iglesia{filtered.length !== 1 ? 's' : ''}{search ? ` — "${search}"` : ''}
+                {filtered.length} church{filtered.length !== 1 ? 'es' : ''}{search ? ` — "${search}"` : ''}
               </div>
               {filtered.map(church => (
                 <button
