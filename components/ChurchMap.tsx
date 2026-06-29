@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, LayersControl } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, LayersControl } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Church } from '@/lib/supabase'
@@ -127,23 +127,48 @@ function groupByParish(churches: Church[]) {
   return groups
 }
 
+// Build a stable id -> [lat,lng] map using the same per-parish spread as markers,
+// so routes connect to exactly where each marker is drawn.
+function buildPositions(churches: Church[]) {
+  const map = new Map<string, [number, number]>()
+  const groups = groupByParish(churches)
+  for (const parishChurches of Object.values(groups)) {
+    parishChurches.forEach((church, idx) => {
+      map.set(church.id, getCoords(church, idx, parishChurches.length))
+    })
+  }
+  return map
+}
+
+// Distinct colors for each distribution center's route network
+const ROUTE_COLORS = ['#7c3aed', '#0891b2', '#db2777', '#ea580c']
+
 interface Props {
   churches: Church[]
+  allChurches?: Church[]
   selected: Church | null
   onSelect: (church: Church) => void
   onSetLocation?: (church: Church, lat: number, lng: number) => void
   settingLocationFor?: Church | null
+  showRoutes?: boolean
 }
 
-export default function ChurchMap({ churches, selected, onSelect, onSetLocation, settingLocationFor }: Props) {
+export default function ChurchMap({ churches, allChurches, selected, onSelect, onSetLocation, settingLocationFor, showRoutes }: Props) {
   const groups = groupByParish(churches)
+
+  // Routes are computed over the full church set so the network stays complete
+  // even when the list is filtered.
+  const routeSource = allChurches && allChurches.length ? allChurches : churches
+  const positions = buildPositions(routeSource)
+  const centers = routeSource.filter(c => c.is_distribution_center)
+  const centerColor = new Map<string, string>()
+  centers.forEach((c, i) => centerColor.set(c.id, ROUTE_COLORS[i % ROUTE_COLORS.length]))
 
   return (
     <MapContainer
       center={[10.6017, -66.9297]}
       zoom={12}
       style={{ height: '100%', width: '100%', cursor: settingLocationFor ? 'crosshair' : undefined }}
-      preferCanvas={true}
     >
       <LayersControl position="topright">
         <LayersControl.BaseLayer checked name="Mapa">
@@ -178,9 +203,25 @@ export default function ChurchMap({ churches, selected, onSelect, onSetLocation,
         <MapClickHandler church={settingLocationFor} onSetLocation={onSetLocation} />
       )}
 
+      {/* Distribution routes: line from each center to its assigned churches */}
+      {showRoutes && routeSource.map(church => {
+        if (church.is_distribution_center || !church.distribution_center_id) return null
+        const from = positions.get(church.distribution_center_id)
+        const to = positions.get(church.id)
+        if (!from || !to) return null
+        const color = centerColor.get(church.distribution_center_id) || '#7c3aed'
+        return (
+          <Polyline
+            key={`route-${church.id}`}
+            positions={[from, to]}
+            pathOptions={{ color, weight: 2, opacity: 0.55 }}
+          />
+        )
+      })}
+
       {Object.entries(groups).map(([, parishChurches]) =>
         parishChurches.map((church, idx) => {
-          const pos = getCoords(church, idx, parishChurches.length)
+          const pos = positions.get(church.id) || getCoords(church, idx, parishChurches.length)
           const icon = getIcon(church, selected?.id === church.id)
           return (
             <Marker

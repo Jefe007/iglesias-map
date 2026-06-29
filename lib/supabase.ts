@@ -18,5 +18,6 @@ export type Church = {
   is_distribution_center: boolean
   notes: string | null
   geocode_status: 'validado' | 'pendiente' | 'aproximado' | null
+  distribution_center_id: string | null
   created_at: string
 }

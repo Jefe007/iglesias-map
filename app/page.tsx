@@ -18,6 +18,7 @@ export default function Home() {
   const [settingLocationFor, setSettingLocationFor] = useState<Church | null>(null)
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [showRoutes, setShowRoutes] = useState(false)
 
   const fetchChurches = useCallback(async () => {
     setLoading(true)
@@ -39,6 +40,14 @@ export default function Home() {
   }
 
   const openChurch = (c: Church) => { setSelected(c); setSheetOpen(true) }
+
+  const centers = churches.filter(c => c.is_distribution_center)
+
+  const reassignCenter = async (church: Church, centerId: string) => {
+    await supabase.from('churches').update({ distribution_center_id: centerId || null }).eq('id', church.id)
+    fetchChurches()
+    setSelected(prev => prev?.id === church.id ? { ...prev, distribution_center_id: centerId || null } : prev)
+  }
 
   const toggleDistribution = async (church: Church) => {
     await supabase
@@ -105,6 +114,16 @@ export default function Home() {
           <span>Distribution only</span>
         </label>
 
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showRoutes}
+            onChange={e => setShowRoutes(e.target.checked)}
+            className="w-4 h-4 accent-indigo-600"
+          />
+          <span>🛣️ Show routes</span>
+        </label>
+
         <div className="ml-auto flex gap-3 text-xs text-gray-500">
           <span className="flex items-center gap-1"><span className="text-red-600 text-base">📍</span> Distribution</span>
           <span className="flex items-center gap-1"><span className="text-blue-600 text-base">📍</span> Validated</span>
@@ -130,10 +149,12 @@ export default function Home() {
               )}
               <ChurchMap
                 churches={filtered}
+                allChurches={churches}
                 selected={selected}
                 onSelect={openChurch}
                 onSetLocation={handleSetLocation}
                 settingLocationFor={settingLocationFor}
+                showRoutes={showRoutes}
               />
             </>
           )}
@@ -179,6 +200,21 @@ export default function Home() {
                   <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parish</div>
                   <div className="text-gray-800">{selected.parish}</div>
                 </div>
+                {!selected.is_distribution_center && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Distribution Center</div>
+                    <select
+                      value={selected.distribution_center_id || ''}
+                      onChange={e => reassignCenter(selected, e.target.value)}
+                      className="w-full bg-white border border-gray-300 rounded-md px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">— Unassigned —</option>
+                      {centers.map(c => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.parish})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {selected.phone && (
                   <div className="bg-gray-50 rounded-lg p-3">
                     <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Phone</div>
