@@ -13,15 +13,44 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 })
 
-const makeIcon = (color: string) => new L.Icon({
-  iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
-})
+// Custom teardrop pin with an inner glyph (SVG via divIcon).
+// Distribution centers get a star; churches get a cross.
+function makePin(fill: string, glyph: 'star' | 'cross', size = 1) {
+  const w = 30 * size
+  const h = 40 * size
+  const star = `<path transform="translate(15 14) scale(0.9)" fill="#fff" d="M0 -6 L1.8 -1.9 L6.2 -1.9 L2.6 0.7 L4 5 L0 2.3 L-4 5 L-2.6 0.7 L-6.2 -1.9 L-1.8 -1.9 Z"/>`
+  const cross = `<g fill="#fff"><rect x="13.2" y="8" width="3.6" height="13" rx="1"/><rect x="9.8" y="11.4" width="10.4" height="3.6" rx="1"/></g>`
+  const svg = `
+    <svg width="${w}" height="${h}" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="s" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-opacity="0.4"/>
+        </filter>
+      </defs>
+      <path filter="url(#s)" fill="${fill}" stroke="#fff" stroke-width="1.5"
+        d="M15 1 C7.3 1 1 7.1 1 14.6 C1 24 15 39 15 39 C15 39 29 24 29 14.6 C29 7.1 22.7 1 15 1 Z"/>
+      ${glyph === 'star' ? star : cross}
+    </svg>`
+  return L.divIcon({
+    html: svg,
+    className: 'church-pin',
+    iconSize: [w, h],
+    iconAnchor: [w / 2, h],
+    popupAnchor: [0, -h + 6],
+  })
+}
 
-const redIcon  = makeIcon('red')
-const blueIcon = makeIcon('blue')
-const greyIcon = makeIcon('grey')
+function getIcon(church: Church, isSelected: boolean) {
+  const fill = church.is_distribution_center ? '#dc2626'
+    : church.geocode_status === 'validado' ? '#2563eb'
+    : '#94a3b8'
+  const glyph: 'star' | 'cross' = church.is_distribution_center ? 'star' : 'cross'
+  const pin = makePin(fill, glyph, isSelected ? 1.25 : 1)
+  if (isSelected) {
+    pin.options.className = 'church-pin selected'
+  }
+  return pin
+}
 
 const PARISH_COORDS: Record<string, [number, number]> = {
   'Naiguata':     [10.6095, -66.7424],
@@ -152,9 +181,7 @@ export default function ChurchMap({ churches, selected, onSelect, onSetLocation,
       {Object.entries(groups).map(([, parishChurches]) =>
         parishChurches.map((church, idx) => {
           const pos = getCoords(church, idx, parishChurches.length)
-          const icon = church.is_distribution_center ? redIcon
-            : church.geocode_status === 'validado' ? blueIcon
-            : greyIcon
+          const icon = getIcon(church, selected?.id === church.id)
           return (
             <Marker
               key={church.id}
@@ -165,7 +192,7 @@ export default function ChurchMap({ churches, selected, onSelect, onSetLocation,
               <Popup>
                 <div className="min-w-[170px]">
                   {church.is_distribution_center && (
-                    <div className="text-red-600 text-xs font-bold mb-1">🔴 Centro de Distribución</div>
+                    <div className="text-red-600 text-xs font-bold mb-1">🔴 Distribution Center</div>
                   )}
                   <div className="font-bold text-sm leading-tight">{church.name}</div>
                   {church.pastor_name && <div className="text-gray-600 text-xs mt-1">👤 {church.pastor_name}</div>}
@@ -177,7 +204,7 @@ export default function ChurchMap({ churches, selected, onSelect, onSetLocation,
                     </a>
                   )}
                   <div className={`mt-2 text-xs px-1.5 py-0.5 rounded-full inline-block ${church.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                    {church.geocode_status === 'validado' ? '✓ Validado' : '⏳ Pendiente'}
+                    {church.geocode_status === 'validado' ? '✓ Validated' : '⏳ Pending'}
                   </div>
                 </div>
               </Popup>

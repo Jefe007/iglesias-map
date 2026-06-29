@@ -17,6 +17,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [settingLocationFor, setSettingLocationFor] = useState<Church | null>(null)
   const [search, setSearch] = useState('')
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   const fetchChurches = useCallback(async () => {
     setLoading(true)
@@ -36,6 +37,8 @@ export default function Home() {
     fetchChurches()
     setSelected(prev => prev?.id === church.id ? { ...prev, lat, lng, geocode_status: 'validado' } : prev)
   }
+
+  const openChurch = (c: Church) => { setSelected(c); setSheetOpen(true) }
 
   const toggleDistribution = async (church: Church) => {
     await supabase
@@ -110,7 +113,7 @@ export default function Home() {
       </div>
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         {/* Map */}
         <div className="flex-1 relative">
           {loading ? (
@@ -120,7 +123,7 @@ export default function Home() {
           ) : (
             <>
               {settingLocationFor && (
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-sm font-semibold shadow-lg">
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
                   📍 Click on the map to pin: <strong>{settingLocationFor.name}</strong>
                   <button onClick={() => setSettingLocationFor(null)} className="ml-3 text-yellow-700 hover:text-yellow-900">✕</button>
                 </div>
@@ -128,7 +131,7 @@ export default function Home() {
               <ChurchMap
                 churches={filtered}
                 selected={selected}
-                onSelect={setSelected}
+                onSelect={openChurch}
                 onSetLocation={handleSetLocation}
                 settingLocationFor={settingLocationFor}
               />
@@ -136,8 +139,28 @@ export default function Home() {
           )}
         </div>
 
-        {/* Sidebar */}
-        <div className="w-72 bg-white border-l overflow-y-auto flex flex-col">
+        {/* Sidebar (desktop) / bottom sheet (mobile) */}
+        <div
+          className={`
+            bg-white flex flex-col overflow-hidden
+            md:static md:w-72 md:border-l md:shadow-none md:rounded-none md:max-h-none md:translate-y-0
+            fixed inset-x-0 bottom-0 z-[1100] rounded-t-2xl shadow-2xl max-h-[78vh]
+            transition-transform duration-300 ease-out
+            ${sheetOpen || selected ? 'translate-y-0' : 'translate-y-[calc(100%-3.25rem)]'}
+          `}
+        >
+          {/* Mobile handle */}
+          <button
+            onClick={() => { setSheetOpen(o => !o); if (selected) setSelected(null) }}
+            className="md:hidden flex flex-col items-center gap-1 py-2 border-b border-gray-100 active:bg-gray-50"
+          >
+            <span className="w-10 h-1 rounded-full bg-gray-300" />
+            <span className="text-xs font-semibold text-gray-600">
+              {selected ? selected.name : `${filtered.length} church${filtered.length !== 1 ? 'es' : ''} ${sheetOpen ? '▼' : '▲'}`}
+            </span>
+          </button>
+
+          <div className="overflow-y-auto flex-1">
           {selected ? (
             <div className="p-4">
               <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Back to list</button>
@@ -193,7 +216,7 @@ export default function Home() {
               {filtered.map(church => (
                 <button
                   key={church.id}
-                  onClick={() => setSelected(church)}
+                  onClick={() => openChurch(church)}
                   className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors"
                 >
                   <div className="flex items-start gap-2">
@@ -210,6 +233,7 @@ export default function Home() {
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>
