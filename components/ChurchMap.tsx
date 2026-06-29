@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, LayersControl } from 'react-leaflet'
-import MarkerClusterGroup from 'react-leaflet-cluster'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Church } from '@/lib/supabase'
@@ -150,51 +149,42 @@ export default function ChurchMap({ churches, selected, onSelect, onSetLocation,
         <MapClickHandler church={settingLocationFor} onSetLocation={onSetLocation} />
       )}
 
-      <MarkerClusterGroup
-        chunkedLoading
-        maxClusterRadius={60}
-        spiderfyOnMaxZoom={false}
-        showCoverageOnHover={false}
-        zoomToBoundsOnClick={true}
-        disableClusteringAtZoom={15}
-      >
-        {Object.entries(groups).map(([, parishChurches]) =>
-          parishChurches.map((church, idx) => {
-            const pos = getCoords(church, idx, parishChurches.length)
-            const icon = church.is_distribution_center ? redIcon
-              : church.geocode_status === 'validado' ? blueIcon
-              : greyIcon
-            return (
-              <Marker
-                key={church.id}
-                position={pos}
-                icon={icon}
-                eventHandlers={{ click: () => onSelect(church) }}
-              >
-                <Popup>
-                  <div className="min-w-[170px]">
-                    {church.is_distribution_center && (
-                      <div className="text-red-600 text-xs font-bold mb-1">🔴 Centro de Distribución</div>
-                    )}
-                    <div className="font-bold text-sm leading-tight">{church.name}</div>
-                    {church.pastor_name && <div className="text-gray-600 text-xs mt-1">👤 {church.pastor_name}</div>}
-                    <div className="text-gray-500 text-xs mt-0.5">📍 {church.parish}</div>
-                    {church.phone && (
-                      <a href={`https://wa.me/58${church.phone}`} target="_blank" rel="noreferrer"
-                        className="block mt-2 text-green-600 text-xs font-medium hover:underline">
-                        📱 WhatsApp →
-                      </a>
-                    )}
-                    <div className={`mt-2 text-xs px-1.5 py-0.5 rounded-full inline-block ${church.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                      {church.geocode_status === 'validado' ? '✓ Validado' : '⏳ Pendiente'}
-                    </div>
+      {Object.entries(groups).map(([, parishChurches]) =>
+        parishChurches.map((church, idx) => {
+          const pos = getCoords(church, idx, parishChurches.length)
+          const icon = church.is_distribution_center ? redIcon
+            : church.geocode_status === 'validado' ? blueIcon
+            : greyIcon
+          return (
+            <Marker
+              key={church.id}
+              position={pos}
+              icon={icon}
+              eventHandlers={{ click: () => onSelect(church) }}
+            >
+              <Popup>
+                <div className="min-w-[170px]">
+                  {church.is_distribution_center && (
+                    <div className="text-red-600 text-xs font-bold mb-1">🔴 Centro de Distribución</div>
+                  )}
+                  <div className="font-bold text-sm leading-tight">{church.name}</div>
+                  {church.pastor_name && <div className="text-gray-600 text-xs mt-1">👤 {church.pastor_name}</div>}
+                  <div className="text-gray-500 text-xs mt-0.5">📍 {church.parish}</div>
+                  {church.phone && (
+                    <a href={`https://wa.me/58${church.phone}`} target="_blank" rel="noreferrer"
+                      className="block mt-2 text-green-600 text-xs font-medium hover:underline">
+                      📱 WhatsApp →
+                    </a>
+                  )}
+                  <div className={`mt-2 text-xs px-1.5 py-0.5 rounded-full inline-block ${church.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                    {church.geocode_status === 'validado' ? '✓ Validado' : '⏳ Pendiente'}
                   </div>
-                </Popup>
-              </Marker>
-            )
-          })
-        )}
-      </MarkerClusterGroup>
+                </div>
+              </Popup>
+            </Marker>
+          )
+        })
+      )}
     </MapContainer>
   )
 }
