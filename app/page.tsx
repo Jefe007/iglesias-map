@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import { supabase, Church } from '@/lib/supabase'
 
 const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false })
@@ -74,9 +75,17 @@ export default function Home() {
           <h1 className="text-lg font-bold">⛪ La Guaira Churches</h1>
           <p className="text-blue-200 text-xs">Distribution Centers</p>
         </div>
-        <div className="text-right text-sm">
-          <div className="text-white font-semibold">{churches.length} churches</div>
-          <div className="text-red-300 text-xs">🔴 {distCount} distribution centers</div>
+        <div className="flex items-center gap-4">
+          <div className="text-right text-sm">
+            <div className="text-white font-semibold">{churches.length} churches</div>
+            <div className="text-red-300 text-xs">🔴 {distCount} distribution centers</div>
+          </div>
+          <Link
+            href="/dashboard"
+            className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-white/20 whitespace-nowrap"
+          >
+            📊 Dashboard
+          </Link>
         </div>
       </header>
 
