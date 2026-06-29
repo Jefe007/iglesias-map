@@ -15,6 +15,7 @@ export default function Home() {
   const [selected, setSelected] = useState<Church | null>(null)
   const [loading, setLoading] = useState(true)
   const [settingLocationFor, setSettingLocationFor] = useState<Church | null>(null)
+  const [search, setSearch] = useState('')
 
   const fetchChurches = useCallback(async () => {
     setLoading(true)
@@ -45,6 +46,12 @@ export default function Home() {
   }
 
   const distCount = churches.filter(c => c.is_distribution_center).length
+  const filtered = search.trim()
+    ? churches.filter(c =>
+        c.name.toLowerCase().includes(search.toLowerCase()) ||
+        (c.pastor_name || '').toLowerCase().includes(search.toLowerCase())
+      )
+    : churches
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -62,6 +69,21 @@ export default function Home() {
 
       {/* Filters */}
       <div className="bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm z-10">
+        {/* Search */}
+        <div className="relative">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+          <input
+            type="text"
+            placeholder="Buscar iglesia o pastor..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="border border-gray-300 rounded-lg pl-8 pr-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
+          )}
+        </div>
+
         <select
           value={parish}
           onChange={e => setParish(e.target.value)}
@@ -77,11 +99,11 @@ export default function Home() {
             onChange={e => setOnlyDistribution(e.target.checked)}
             className="w-4 h-4 accent-red-600"
           />
-          <span>Solo centros de distribución</span>
+          <span>Solo centros</span>
         </label>
 
         <div className="ml-auto flex gap-3 text-xs text-gray-500">
-          <span className="flex items-center gap-1"><span className="text-red-600 text-base">📍</span> Centro distribución</span>
+          <span className="flex items-center gap-1"><span className="text-red-600 text-base">📍</span> Distribución</span>
           <span className="flex items-center gap-1"><span className="text-blue-600 text-base">📍</span> Validada</span>
           <span className="flex items-center gap-1"><span className="text-gray-400 text-base">📍</span> Pendiente</span>
         </div>
@@ -104,7 +126,7 @@ export default function Home() {
                 </div>
               )}
               <ChurchMap
-                churches={churches}
+                churches={filtered}
                 selected={selected}
                 onSelect={setSelected}
                 onSetLocation={handleSetLocation}
@@ -166,9 +188,9 @@ export default function Home() {
           ) : (
             <div className="divide-y">
               <div className="p-3 text-xs text-gray-500 uppercase font-semibold bg-gray-50">
-                {churches.length} Iglesias encontradas
+                {filtered.length} iglesia{filtered.length !== 1 ? 's' : ''}{search ? ` — "${search}"` : ''}
               </div>
-              {churches.map(church => (
+              {filtered.map(church => (
                 <button
                   key={church.id}
                   onClick={() => setSelected(church)}

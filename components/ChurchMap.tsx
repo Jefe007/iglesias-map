@@ -7,7 +7,6 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Church } from '@/lib/supabase'
 
-// Fix Leaflet default icons
 delete (L.Icon.Default.prototype as any)._getIconUrl
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
@@ -18,10 +17,7 @@ L.Icon.Default.mergeOptions({
 const makeIcon = (color: string) => new L.Icon({
   iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
+  iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
 })
 
 const redIcon  = makeIcon('red')
@@ -54,13 +50,43 @@ function FlyToSelected({ church }: { church: Church | null }) {
     const target: [number, number] = church.lat && church.lng
       ? [Number(church.lat), Number(church.lng)]
       : PARISH_COORDS[church.parish] || [10.6017, -66.9297]
-    map.flyTo(target, 15, { duration: 0.8 })
+    map.flyTo(target, 16, { duration: 0.8 })
   }, [church, map])
   return null
 }
 
 function MapClickHandler({ church, onSetLocation }: { church: Church; onSetLocation: (c: Church, lat: number, lng: number) => void }) {
   useMapEvents({ click(e) { onSetLocation(church, e.latlng.lat, e.latlng.lng) } })
+  return null
+}
+
+// Detects active base layer and adds label overlay for hybrid mode
+function HybridLabelsManager() {
+  const map = useMap()
+  const [showLabels, setShowLabels] = useState(false)
+  const labelsLayerRef = useState(() =>
+    new L.TileLayer(
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',
+      { attribution: '&copy; <a href="https://carto.com">CARTO</a>', pane: 'overlayPane', zIndex: 450 }
+    )
+  )[0]
+
+  useEffect(() => {
+    const handler = (e: L.LayersControlEvent) => {
+      setShowLabels(e.name === 'Satélite + Nombres')
+    }
+    map.on('baselayerchange', handler)
+    return () => { map.off('baselayerchange', handler) }
+  }, [map])
+
+  useEffect(() => {
+    if (showLabels) {
+      labelsLayerRef.addTo(map)
+    } else {
+      if (map.hasLayer(labelsLayerRef)) map.removeLayer(labelsLayerRef)
+    }
+  }, [showLabels, map, labelsLayerRef])
+
   return null
 }
 
@@ -89,41 +115,35 @@ export default function ChurchMap({ churches, selected, onSelect, onSetLocation,
       center={[10.6017, -66.9297]}
       zoom={12}
       style={{ height: '100%', width: '100%', cursor: settingLocationFor ? 'crosshair' : undefined }}
-      zoomControl={true}
       preferCanvas={true}
     >
       <LayersControl position="topright">
-        {/* Street map */}
         <LayersControl.BaseLayer checked name="Mapa">
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxZoom={19}
-            keepBuffer={4}
+            maxZoom={19} keepBuffer={4}
           />
         </LayersControl.BaseLayer>
 
-        {/* Satellite — Esri World Imagery (free, no API key) */}
         <LayersControl.BaseLayer name="Satélite">
           <TileLayer
-            attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            attribution='Tiles &copy; Esri'
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={19}
-            keepBuffer={4}
+            maxZoom={19} keepBuffer={4}
           />
         </LayersControl.BaseLayer>
 
-        {/* Hybrid: satellite + labels */}
         <LayersControl.BaseLayer name="Satélite + Nombres">
           <TileLayer
             attribution='Tiles &copy; Esri'
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            maxZoom={19}
-            keepBuffer={4}
+            maxZoom={19} keepBuffer={4}
           />
         </LayersControl.BaseLayer>
       </LayersControl>
 
+      <HybridLabelsManager />
       <FlyToSelected church={selected} />
 
       {settingLocationFor && onSetLocation && (
@@ -132,10 +152,11 @@ export default function ChurchMap({ churches, selected, onSelect, onSetLocation,
 
       <MarkerClusterGroup
         chunkedLoading
-        maxClusterRadius={50}
-        spiderfyOnMaxZoom={true}
+        maxClusterRadius={60}
+        spiderfyOnMaxZoom={false}
         showCoverageOnHover={false}
         zoomToBoundsOnClick={true}
+        disableClusteringAtZoom={15}
       >
         {Object.entries(groups).map(([, parishChurches]) =>
           parishChurches.map((church, idx) => {
