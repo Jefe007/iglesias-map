@@ -1,5 +1,13 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+
+.font-data { font-family: 'Fira Code', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.font-sans-pro { font-family: 'Fira Sans', system-ui, sans-serif; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
 
 html, body {
   height: 100%;

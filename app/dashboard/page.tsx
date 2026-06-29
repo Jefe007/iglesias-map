@@ -6,6 +6,35 @@ import { supabase, Church } from '@/lib/supabase'
 
 const CENTER_COLORS = ['#7c3aed', '#0891b2', '#db2777', '#ea580c']
 
+/* ---- Lucide-style inline SVG icons (1.75 stroke, 24px) ---- */
+const Icon = {
+  church: (c: string) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <path d="M12 2v6M9 5h6M12 8l-6 4v9h12v-9z" /><path d="M9 21v-5h6v5" /><path d="M6 12L3 14v7h3M18 12l3 2v7h-3" />
+    </svg>
+  ),
+  package: (c: string) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <path d="M16.5 9.4 7.5 4.21M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="m3.3 7 8.7 5 8.7-5M12 22V12" />
+    </svg>
+  ),
+  pin: (c: string) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" />
+    </svg>
+  ),
+  clock: (c: string) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
+    </svg>
+  ),
+  map: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0zM15 5.764v15M9 3.236v15" />
+    </svg>
+  ),
+}
+
 export default function Dashboard() {
   const [churches, setChurches] = useState<Church[]>([])
   const [loading, setLoading] = useState(true)
@@ -24,7 +53,6 @@ export default function Dashboard() {
   const pending = total - validated
   const validatedPct = total ? Math.round((validated / total) * 100) : 0
 
-  // Per-parish breakdown
   const byParish = Object.entries(
     churches.reduce<Record<string, number>>((acc, c) => {
       acc[c.parish] = (acc[c.parish] || 0) + 1
@@ -33,7 +61,6 @@ export default function Dashboard() {
   ).sort((a, b) => b[1] - a[1])
   const maxParish = Math.max(1, ...byParish.map(([, n]) => n))
 
-  // Coverage per distribution center
   const coverage = centers
     .map((center, i) => ({
       center,
@@ -46,160 +73,141 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400">
-        Loading dashboard…
+      <div className="min-h-dvh flex items-center justify-center bg-[#F8FAFC] text-slate-400 font-sans-pro">
+        <div className="flex items-center gap-3">
+          <span className="w-4 h-4 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
+          Loading dashboard…
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-dvh bg-[#F8FAFC] font-sans-pro text-slate-800">
       {/* Header */}
-      <header className="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-800 text-white">
-        <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">⛪ La Guaira Churches</h1>
-            <p className="text-blue-200 text-sm mt-0.5">Distribution Network · Dashboard</p>
+      <header className="border-b border-slate-200 bg-white">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white">
+              {Icon.church('white')}
+            </div>
+            <div>
+              <h1 className="text-base font-bold tracking-tight leading-none">La Guaira Distribution Network</h1>
+              <p className="text-slate-400 text-xs mt-1 font-data">DASHBOARD · OVERVIEW</p>
+            </div>
           </div>
           <Link
             href="/"
-            className="bg-white/10 hover:bg-white/20 backdrop-blur px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-white/20"
+            className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
-            🗺️ Open Map
+            {Icon.map} Open Map
           </Link>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
-        {/* KPI cards */}
+      <main className="max-w-6xl mx-auto px-6 py-7 space-y-6">
+        {/* KPI grid */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard
-            label="Total Churches"
-            value={total}
-            icon="⛪"
-            accent="from-blue-500 to-blue-600"
-          />
-          <KpiCard
-            label="Distribution Centers"
-            value={centers.length}
-            icon="📦"
-            accent="from-red-500 to-rose-600"
-          />
-          <KpiCard
-            label="Validated Locations"
-            value={validated}
-            sub={`${validatedPct}% of total`}
-            icon="📍"
-            accent="from-emerald-500 to-green-600"
-          />
-          <KpiCard
-            label="Pending Locations"
-            value={pending}
-            sub={`${100 - validatedPct}% of total`}
-            icon="⏳"
-            accent="from-amber-500 to-orange-500"
-          />
+          <KpiCard label="Total Churches" value={total} icon={Icon.church} tint="#2563EB" />
+          <KpiCard label="Distribution Centers" value={centers.length} icon={Icon.package} tint="#ea580c" />
+          <KpiCard label="Validated" value={validated} delta={`${validatedPct}%`} icon={Icon.pin} tint="#059669" />
+          <KpiCard label="Pending" value={pending} delta={`${100 - validatedPct}%`} icon={Icon.clock} tint="#d97706" />
         </section>
 
-        {/* Geocoding progress */}
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-slate-800">Location Validation Progress</h2>
-            <span className="text-2xl font-bold text-emerald-600">{validatedPct}%</span>
+        {/* Validation progress */}
+        <section className="bg-white rounded-xl border border-slate-200 p-5">
+          <div className="flex items-end justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700">Location Validation</h2>
+              <p className="text-xs text-slate-400 mt-0.5">GPS-verified coordinates vs. parish approximations</p>
+            </div>
+            <span className="font-data text-2xl font-bold text-emerald-600 leading-none">{validatedPct}<span className="text-base">%</span></span>
           </div>
-          <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-emerald-500 to-green-500 rounded-full transition-all duration-700"
-              style={{ width: `${validatedPct}%` }}
-            />
+          <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden flex">
+            <div className="h-full bg-emerald-500 transition-[width] duration-700" style={{ width: `${validatedPct}%` }} />
+            <div className="h-full bg-amber-400/70 transition-[width] duration-700" style={{ width: `${100 - validatedPct}%` }} />
           </div>
-          <div className="flex justify-between mt-2 text-xs text-slate-500">
-            <span>{validated} validated</span>
-            <span>{pending} pending</span>
+          <div className="flex justify-between mt-2 text-xs font-data text-slate-500">
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> {validated} validated</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" /> {pending} pending</span>
           </div>
         </section>
 
-        <div className="grid lg:grid-cols-2 gap-8">
-          {/* Coverage per center */}
-          <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-            <h2 className="font-semibold text-slate-800 mb-4">Coverage by Distribution Center</h2>
-            <div className="space-y-4">
+        <div className="grid lg:grid-cols-2 gap-5">
+          {/* Coverage */}
+          <section className="bg-white rounded-xl border border-slate-200 p-5">
+            <h2 className="text-sm font-semibold text-slate-700 mb-1">Coverage by Center</h2>
+            <p className="text-xs text-slate-400 mb-4">Churches assigned to each distribution hub</p>
+            <div className="space-y-3.5">
               {coverage.map(({ center, color, count }) => (
-                <div key={center.id}>
-                  <div className="flex items-center justify-between text-sm mb-1">
+                <div key={center.id} className="group">
+                  <div className="flex items-center justify-between text-sm mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
+                      <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: color }} />
                       <span className="font-medium text-slate-700 truncate">{center.name}</span>
                     </div>
-                    <span className="text-slate-500 font-semibold ml-2">{count}</span>
+                    <span className="font-data font-semibold text-slate-900 ml-2 tabular-nums">{count}</span>
                   </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${(count / maxCoverage) * 100}%`, background: color }}
-                    />
+                  <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${(count / maxCoverage) * 100}%`, background: color }} />
                   </div>
-                  <div className="text-xs text-slate-400 mt-0.5">{center.parish}</div>
                 </div>
               ))}
               {unassigned > 0 && (
-                <div className="text-xs text-amber-600 pt-2 border-t border-slate-100">
-                  ⚠️ {unassigned} church{unassigned !== 1 ? 'es' : ''} not assigned to any center
+                <div className="text-xs text-amber-600 pt-3 mt-1 border-t border-slate-100 font-data">
+                  {unassigned} church{unassigned !== 1 ? 'es' : ''} unassigned
                 </div>
               )}
             </div>
           </section>
 
           {/* By parish */}
-          <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-            <h2 className="font-semibold text-slate-800 mb-4">Churches by Parish</h2>
-            <div className="space-y-3">
+          <section className="bg-white rounded-xl border border-slate-200 p-5">
+            <h2 className="text-sm font-semibold text-slate-700 mb-1">Churches by Parish</h2>
+            <p className="text-xs text-slate-400 mb-4">{byParish.length} parishes across La Guaira</p>
+            <div className="space-y-2.5">
               {byParish.map(([parish, n]) => (
-                <div key={parish}>
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="font-medium text-slate-700">{parish}</span>
-                    <span className="text-slate-500 font-semibold">{n}</span>
+                <div key={parish} className="flex items-center gap-3">
+                  <span className="text-sm text-slate-600 w-28 flex-shrink-0 truncate">{parish}</span>
+                  <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="h-full rounded-full bg-blue-600 transition-[width] duration-700" style={{ width: `${(n / maxParish) * 100}%` }} />
                   </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-700"
-                      style={{ width: `${(n / maxParish) * 100}%` }}
-                    />
-                  </div>
+                  <span className="font-data text-sm font-semibold text-slate-900 w-6 text-right tabular-nums">{n}</span>
                 </div>
               ))}
             </div>
           </section>
         </div>
 
-        <footer className="text-center text-xs text-slate-400 pt-4">
-          {total} churches · {byParish.length} parishes · {centers.length} distribution centers
+        <footer className="text-center text-xs text-slate-400 font-data pt-2">
+          {total} CHURCHES · {byParish.length} PARISHES · {centers.length} CENTERS
         </footer>
       </main>
     </div>
   )
 }
 
-function KpiCard({ label, value, sub, icon, accent }: {
+function KpiCard({ label, value, delta, icon, tint }: {
   label: string
   value: number
-  sub?: string
-  icon: string
-  accent: string
+  delta?: string
+  icon: (c: string) => React.ReactNode
+  tint: string
 }) {
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 relative overflow-hidden">
-      <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${accent}`} />
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-3xl font-bold text-slate-800 tabular-nums">{value}</div>
-          <div className="text-xs text-slate-500 mt-1 font-medium uppercase tracking-wide">{label}</div>
-          {sub && <div className="text-xs text-slate-400 mt-0.5">{sub}</div>}
+    <div className="bg-white rounded-xl border border-slate-200 p-5 transition-shadow hover:shadow-md hover:shadow-slate-200/60">
+      <div className="flex items-center justify-between mb-3">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${tint}14` }}>
+          {icon(tint)}
         </div>
-        <div className={`text-2xl w-11 h-11 rounded-xl bg-gradient-to-br ${accent} flex items-center justify-center shadow-sm`}>
-          <span className="grayscale-0">{icon}</span>
-        </div>
+        {delta && (
+          <span className="font-data text-xs font-semibold px-1.5 py-0.5 rounded" style={{ color: tint, background: `${tint}14` }}>
+            {delta}
+          </span>
+        )}
       </div>
+      <div className="font-data text-3xl font-bold text-slate-900 leading-none tabular-nums">{value}</div>
+      <div className="text-xs text-slate-500 mt-1.5 font-medium">{label}</div>
     </div>
   )
 }
