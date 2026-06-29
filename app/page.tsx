@@ -14,6 +14,7 @@ export default function Home() {
   const [onlyDistribution, setOnlyDistribution] = useState(false)
   const [selected, setSelected] = useState<Church | null>(null)
   const [loading, setLoading] = useState(true)
+  const [settingLocationFor, setSettingLocationFor] = useState<Church | null>(null)
 
   const fetchChurches = useCallback(async () => {
     setLoading(true)
@@ -26,6 +27,13 @@ export default function Home() {
   }, [parish, onlyDistribution])
 
   useEffect(() => { fetchChurches() }, [fetchChurches])
+
+  const handleSetLocation = async (church: Church, lat: number, lng: number) => {
+    await supabase.from('churches').update({ lat, lng, geocode_status: 'validado' }).eq('id', church.id)
+    setSettingLocationFor(null)
+    fetchChurches()
+    setSelected(prev => prev?.id === church.id ? { ...prev, lat, lng, geocode_status: 'validado' } : prev)
+  }
 
   const toggleDistribution = async (church: Church) => {
     await supabase
@@ -74,7 +82,8 @@ export default function Home() {
 
         <div className="ml-auto flex gap-3 text-xs text-gray-500">
           <span className="flex items-center gap-1"><span className="text-red-600 text-base">📍</span> Centro distribución</span>
-          <span className="flex items-center gap-1"><span className="text-blue-600 text-base">📍</span> Iglesia</span>
+          <span className="flex items-center gap-1"><span className="text-blue-600 text-base">📍</span> Validada</span>
+          <span className="flex items-center gap-1"><span className="text-gray-400 text-base">📍</span> Pendiente</span>
         </div>
       </div>
 
@@ -87,7 +96,21 @@ export default function Home() {
               <div className="text-gray-500 text-sm">Cargando mapa...</div>
             </div>
           ) : (
-            <ChurchMap churches={churches} selected={selected} onSelect={setSelected} />
+            <>
+              {settingLocationFor && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-sm font-semibold shadow-lg">
+                  📍 Haz clic en el mapa para ubicar: <strong>{settingLocationFor.name}</strong>
+                  <button onClick={() => setSettingLocationFor(null)} className="ml-3 text-yellow-700 hover:text-yellow-900">✕</button>
+                </div>
+              )}
+              <ChurchMap
+                churches={churches}
+                selected={selected}
+                onSelect={setSelected}
+                onSetLocation={handleSetLocation}
+                settingLocationFor={settingLocationFor}
+              />
+            </>
           )}
         </div>
 
@@ -96,8 +119,13 @@ export default function Home() {
           {selected ? (
             <div className="p-4">
               <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Volver a lista</button>
-              <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium mb-3 ${selected.is_distribution_center ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                {selected.is_distribution_center ? '🔴 Centro de Distribución' : '🔵 Iglesia'}
+              <div className="flex gap-2 flex-wrap mb-3">
+                <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${selected.is_distribution_center ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                  {selected.is_distribution_center ? '🔴 Centro de Distribución' : '🔵 Iglesia'}
+                </div>
+                <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${selected.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                  {selected.geocode_status === 'validado' ? '📍 Ubicación validada' : '⏳ Ubicación pendiente'}
+                </div>
               </div>
               <h2 className="font-bold text-gray-900 text-base mb-1">{selected.name}</h2>
               {selected.pastor_name && <p className="text-gray-600 text-sm mb-3">👤 {selected.pastor_name}</p>}
@@ -126,6 +154,14 @@ export default function Home() {
               >
                 {selected.is_distribution_center ? 'Quitar como centro de distribución' : '🔴 Marcar como centro de distribución'}
               </button>
+              {selected.geocode_status !== 'validado' && (
+                <button
+                  onClick={() => setSettingLocationFor(selected)}
+                  className="mt-2 w-full py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors"
+                >
+                  📍 Ubicar manualmente en el mapa
+                </button>
+              )}
             </div>
           ) : (
             <div className="divide-y">
