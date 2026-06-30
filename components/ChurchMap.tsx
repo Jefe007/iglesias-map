@@ -40,7 +40,28 @@ function makePin(fill: string, glyph: 'star' | 'cross', size = 1) {
   })
 }
 
+// Circular logo badge for the Samaritan's Purse field hospital.
+// Uses the logo image; if it's missing, falls back to an on-brand SVG
+// (olive-green ring + navy cross) so the marker never breaks.
+function makeHospitalIcon(isSelected: boolean) {
+  const d = isSelected ? 56 : 46
+  const fallback = `<svg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'><circle cx='50' cy='50' r='48' fill='%23fff'/><path d='M50 14a36 36 0 1 0 0 72 36 36 0 0 0 0-72zm0 10a26 26 0 0 1 23 14H53V24h-3zm-3 0v40a26 26 0 0 1-23-26 26 26 0 0 1 23-14z' fill='%23808733'/><g fill='%23172a45'><rect x='44' y='30' width='12' height='44' rx='2'/><rect x='34' y='42' width='32' height='12' rx='2'/></g></svg>`
+  const html = `
+    <div style="width:${d}px;height:${d}px;border-radius:9999px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);border:2px solid #fff;overflow:hidden;display:flex;align-items:center;justify-content:center">
+      <img src="/samaritans-purse-logo.png" alt="Samaritan's Purse" style="width:100%;height:100%;object-fit:contain"
+        onerror="this.onerror=null;this.src=&quot;data:image/svg+xml;utf8,${fallback}&quot;" />
+    </div>`
+  return L.divIcon({
+    html,
+    className: isSelected ? 'church-pin selected' : 'church-pin',
+    iconSize: [d, d],
+    iconAnchor: [d / 2, d / 2],
+    popupAnchor: [0, -d / 2 - 2],
+  })
+}
+
 function getIcon(church: Church, isSelected: boolean) {
+  if (church.marker_type === 'hospital') return makeHospitalIcon(isSelected)
   const fill = church.is_distribution_center ? '#dc2626'
     : church.geocode_status === 'validado' ? '#2563eb'
     : '#94a3b8'
@@ -231,22 +252,37 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
               eventHandlers={{ click: () => onSelect(church) }}
             >
               <Popup>
-                <div className="min-w-[170px]">
-                  {church.is_distribution_center && (
-                    <div className="text-red-600 text-xs font-bold mb-1">🔴 Distribution Center</div>
+                <div className="min-w-[180px]">
+                  {church.marker_type === 'hospital' ? (
+                    <>
+                      {church.image_url && (
+                        <img src={church.image_url} alt={church.name}
+                          onError={e => { e.currentTarget.style.display = 'none' }}
+                          className="w-full h-24 object-cover rounded-md mb-2" />
+                      )}
+                      <div className="text-[#808733] text-xs font-bold mb-0.5">🏥 Field Hospital</div>
+                      <div className="font-bold text-sm leading-tight">{church.name}</div>
+                      <div className="text-gray-500 text-xs mt-0.5">📍 {church.parish}</div>
+                    </>
+                  ) : (
+                    <>
+                      {church.is_distribution_center && (
+                        <div className="text-red-600 text-xs font-bold mb-1">🔴 Distribution Center</div>
+                      )}
+                      <div className="font-bold text-sm leading-tight">{church.name}</div>
+                      {church.pastor_name && <div className="text-gray-600 text-xs mt-1">👤 {church.pastor_name}</div>}
+                      <div className="text-gray-500 text-xs mt-0.5">📍 {church.parish}</div>
+                      {church.phone && (
+                        <a href={`https://wa.me/58${church.phone}`} target="_blank" rel="noreferrer"
+                          className="block mt-2 text-green-600 text-xs font-medium hover:underline">
+                          📱 WhatsApp →
+                        </a>
+                      )}
+                      <div className={`mt-2 text-xs px-1.5 py-0.5 rounded-full inline-block ${church.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {church.geocode_status === 'validado' ? '✓ Validated' : '⏳ Pending'}
+                      </div>
+                    </>
                   )}
-                  <div className="font-bold text-sm leading-tight">{church.name}</div>
-                  {church.pastor_name && <div className="text-gray-600 text-xs mt-1">👤 {church.pastor_name}</div>}
-                  <div className="text-gray-500 text-xs mt-0.5">📍 {church.parish}</div>
-                  {church.phone && (
-                    <a href={`https://wa.me/58${church.phone}`} target="_blank" rel="noreferrer"
-                      className="block mt-2 text-green-600 text-xs font-medium hover:underline">
-                      📱 WhatsApp →
-                    </a>
-                  )}
-                  <div className={`mt-2 text-xs px-1.5 py-0.5 rounded-full inline-block ${church.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                    {church.geocode_status === 'validado' ? '✓ Validated' : '⏳ Pending'}
-                  </div>
                 </div>
               </Popup>
             </Marker>

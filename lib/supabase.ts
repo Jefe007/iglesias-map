@@ -19,5 +19,7 @@ export type Church = {
   notes: string | null
   geocode_status: 'validado' | 'pendiente' | 'aproximado' | null
   distribution_center_id: string | null
+  marker_type: 'church' | 'hospital'
+  image_url: string | null
   created_at: string
 }

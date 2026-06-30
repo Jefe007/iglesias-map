@@ -60,6 +60,7 @@ export default function Home() {
   }
 
   const distCount = churches.filter(c => c.is_distribution_center).length
+  const churchCount = churches.filter(c => c.marker_type !== 'hospital').length
   const filtered = search.trim()
     ? churches.filter(c =>
         c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -77,7 +78,7 @@ export default function Home() {
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right text-sm">
-            <div className="text-white font-semibold">{churches.length} churches</div>
+            <div className="text-white font-semibold">{churchCount} churches</div>
             <div className="text-red-300 text-xs">🔴 {distCount} distribution centers</div>
           </div>
           <Link
@@ -191,7 +192,41 @@ export default function Home() {
           </button>
 
           <div className="overflow-y-auto flex-1">
-          {selected ? (
+          {selected && selected.marker_type === 'hospital' ? (
+            <div className="p-4">
+              <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Back to list</button>
+              {selected.image_url && (
+                <img src={selected.image_url} alt={selected.name}
+                  onError={e => { e.currentTarget.style.display = 'none' }}
+                  className="w-full h-44 object-cover rounded-xl mb-3 border border-slate-200" />
+              )}
+              <div className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-[#80873322] text-[#5f6526] mb-2">
+                🏥 Field Hospital
+              </div>
+              <h2 className="font-bold text-gray-900 text-base mb-1">{selected.name}</h2>
+              <div className="space-y-2 text-sm mt-3">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parish</div>
+                  <div className="text-gray-800">{selected.parish}</div>
+                </div>
+                {selected.notes && (
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">About</div>
+                    <div className="text-gray-800">{selected.notes}</div>
+                  </div>
+                )}
+                {selected.lat && selected.lng && (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${selected.lat},${selected.lng}`}
+                    target="_blank" rel="noreferrer"
+                    className="block text-center bg-[#808733] hover:bg-[#6b7029] text-white py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    🧭 Open in Google Maps
+                  </a>
+                )}
+              </div>
+            </div>
+          ) : selected ? (
             <div className="p-4">
               <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Back to list</button>
               <div className="flex gap-2 flex-wrap mb-3">
@@ -265,12 +300,14 @@ export default function Home() {
                   className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors"
                 >
                   <div className="flex items-start gap-2">
-                    <span className={`text-base mt-0.5 ${church.is_distribution_center ? 'text-red-600' : 'text-blue-600'}`}>
-                      {church.is_distribution_center ? '🔴' : '🔵'}
+                    <span className="text-base mt-0.5">
+                      {church.marker_type === 'hospital' ? '🏥' : church.is_distribution_center ? '🔴' : '🔵'}
                     </span>
                     <div>
                       <div className="text-sm font-medium text-gray-900 leading-tight">{church.name}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{church.pastor_name || '—'}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {church.marker_type === 'hospital' ? 'Samaritan’s Purse' : (church.pastor_name || '—')}
+                      </div>
                       <div className="text-xs text-gray-400">{church.parish}</div>
                     </div>
                   </div>
