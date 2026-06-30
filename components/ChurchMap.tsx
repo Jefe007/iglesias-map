@@ -48,7 +48,7 @@ function makeHospitalIcon(isSelected: boolean) {
   const fallback = `<svg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'><circle cx='50' cy='50' r='48' fill='%23fff'/><path d='M50 14a36 36 0 1 0 0 72 36 36 0 0 0 0-72zm0 10a26 26 0 0 1 23 14H53V24h-3zm-3 0v40a26 26 0 0 1-23-26 26 26 0 0 1 23-14z' fill='%23808733'/><g fill='%23172a45'><rect x='44' y='30' width='12' height='44' rx='2'/><rect x='34' y='42' width='32' height='12' rx='2'/></g></svg>`
   const html = `
     <div style="width:${d}px;height:${d}px;border-radius:9999px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);border:2px solid #fff;overflow:hidden;display:flex;align-items:center;justify-content:center">
-      <img src="/samaritans-purse-logo.png" alt="Samaritan's Purse" style="width:100%;height:100%;object-fit:contain"
+      <img src="/logosp.jpg" alt="Samaritan's Purse" style="width:100%;height:100%;object-fit:cover"
         onerror="this.onerror=null;this.src=&quot;data:image/svg+xml;utf8,${fallback}&quot;" />
     </div>`
   return L.divIcon({

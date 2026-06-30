@@ -10,10 +10,29 @@ const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false }
 const PARISHES = ['All', 'Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet']
 const ALL_OPTION = 'All'
 
+type ViewMode = 'all' | 'churches' | 'distribution' | 'distribution_hospital' | 'hospital'
+const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
+  { value: 'all',                   label: 'All points' },
+  { value: 'churches',              label: 'Churches only' },
+  { value: 'distribution',          label: 'Distribution centers' },
+  { value: 'distribution_hospital', label: 'Distribution + Hospital' },
+  { value: 'hospital',              label: 'Hospital only' },
+]
+
+function matchesView(c: Church, view: ViewMode) {
+  switch (view) {
+    case 'churches':              return c.marker_type === 'church' && !c.is_distribution_center
+    case 'distribution':          return c.is_distribution_center
+    case 'distribution_hospital': return c.is_distribution_center || c.marker_type === 'hospital'
+    case 'hospital':              return c.marker_type === 'hospital'
+    default:                      return true
+  }
+}
+
 export default function Home() {
   const [churches, setChurches] = useState<Church[]>([])
   const [parish, setParish] = useState(ALL_OPTION)
-  const [onlyDistribution, setOnlyDistribution] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>('all')
   const [selected, setSelected] = useState<Church | null>(null)
   const [loading, setLoading] = useState(true)
   const [settingLocationFor, setSettingLocationFor] = useState<Church | null>(null)
@@ -25,11 +44,10 @@ export default function Home() {
     setLoading(true)
     let q = supabase.from('churches').select('*').order('parish').order('name')
     if (parish !== ALL_OPTION) q = q.eq('parish', parish)
-    if (onlyDistribution) q = q.eq('is_distribution_center', true)
     const { data } = await q
     setChurches(data || [])
     setLoading(false)
-  }, [parish, onlyDistribution])
+  }, [parish])
 
   useEffect(() => { fetchChurches() }, [fetchChurches])
 
@@ -61,12 +79,14 @@ export default function Home() {
 
   const distCount = churches.filter(c => c.is_distribution_center).length
   const churchCount = churches.filter(c => c.marker_type !== 'hospital').length
-  const filtered = search.trim()
-    ? churches.filter(c =>
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        (c.pastor_name || '').toLowerCase().includes(search.toLowerCase())
-      )
-    : churches
+  const filtered = churches.filter(c => {
+    if (!matchesView(c, viewMode)) return false
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      return c.name.toLowerCase().includes(q) || (c.pastor_name || '').toLowerCase().includes(q)
+    }
+    return true
+  })
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -114,15 +134,13 @@ export default function Home() {
           {PARISHES.map(p => <option key={p}>{p}</option>)}
         </select>
 
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={onlyDistribution}
-            onChange={e => setOnlyDistribution(e.target.checked)}
-            className="w-4 h-4 accent-red-600"
-          />
-          <span>Distribution only</span>
-        </label>
+        <select
+          value={viewMode}
+          onChange={e => setViewMode(e.target.value as ViewMode)}
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {VIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
 
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
           <input
@@ -134,10 +152,11 @@ export default function Home() {
           <span>🛣️ Show routes</span>
         </label>
 
-        <div className="ml-auto flex gap-3 text-xs text-gray-500">
+        <div className="ml-auto hidden md:flex gap-3 text-xs text-gray-500">
           <span className="flex items-center gap-1"><span className="text-red-600 text-base">📍</span> Distribution</span>
           <span className="flex items-center gap-1"><span className="text-blue-600 text-base">📍</span> Validated</span>
           <span className="flex items-center gap-1"><span className="text-gray-400 text-base">📍</span> Pending</span>
+          <span className="flex items-center gap-1">🏥 Hospital</span>
         </div>
       </div>
 
@@ -187,7 +206,7 @@ export default function Home() {
           >
             <span className="w-10 h-1 rounded-full bg-gray-300" />
             <span className="text-xs font-semibold text-gray-600">
-              {selected ? selected.name : `${filtered.length} church${filtered.length !== 1 ? 'es' : ''} ${sheetOpen ? '▼' : '▲'}`}
+              {selected ? selected.name : `${filtered.length} ${filtered.length !== 1 ? 'points' : 'point'} ${sheetOpen ? '▼' : '▲'}`}
             </span>
           </button>
 
@@ -291,7 +310,7 @@ export default function Home() {
           ) : (
             <div className="divide-y">
               <div className="p-3 text-xs text-gray-500 uppercase font-semibold bg-gray-50">
-                {filtered.length} church{filtered.length !== 1 ? 'es' : ''}{search ? ` — "${search}"` : ''}
+                {filtered.length} {filtered.length !== 1 ? 'points' : 'point'}{search ? ` — "${search}"` : ''}
               </div>
               {filtered.map(church => (
                 <button

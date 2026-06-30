@@ -46,15 +46,18 @@ export default function Dashboard() {
     })
   }, [])
 
-  const total = churches.length
-  const centers = churches.filter(c => c.is_distribution_center)
-  const regular = churches.filter(c => !c.is_distribution_center)
-  const validated = churches.filter(c => c.geocode_status === 'validado').length
+  const hospital = churches.find(c => c.marker_type === 'hospital') || null
+  const churchRecords = churches.filter(c => c.marker_type !== 'hospital')
+
+  const total = churchRecords.length
+  const centers = churchRecords.filter(c => c.is_distribution_center)
+  const regular = churchRecords.filter(c => !c.is_distribution_center)
+  const validated = churchRecords.filter(c => c.geocode_status === 'validado').length
   const pending = total - validated
   const validatedPct = total ? Math.round((validated / total) * 100) : 0
 
   const byParish = Object.entries(
-    churches.reduce<Record<string, number>>((acc, c) => {
+    churchRecords.reduce<Record<string, number>>((acc, c) => {
       acc[c.parish] = (acc[c.parish] || 0) + 1
       return acc
     }, {})
@@ -132,6 +135,49 @@ export default function Dashboard() {
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" /> {pending} pending</span>
           </div>
         </section>
+
+        {/* Field hospital highlight */}
+        {hospital && (
+          <section className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="flex flex-col sm:flex-row">
+              {hospital.image_url && (
+                <div className="sm:w-72 sm:flex-shrink-0 h-44 sm:h-auto relative">
+                  <img src={hospital.image_url} alt={hospital.name}
+                    onError={e => { e.currentTarget.style.display = 'none' }}
+                    className="w-full h-full object-cover" />
+                </div>
+              )}
+              <div className="p-5 flex-1 flex flex-col">
+                <div className="flex items-center gap-2 mb-2">
+                  <img src="/logosp.jpg" alt="Samaritan's Purse"
+                    className="w-8 h-8 rounded-full object-cover border border-slate-200" />
+                  <span className="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#80873318] text-[#5f6526]">
+                    Field Hospital
+                  </span>
+                </div>
+                <h2 className="text-base font-bold text-slate-900">{hospital.name}</h2>
+                <p className="text-sm text-slate-500 mt-1">{hospital.notes}</p>
+                <div className="mt-auto pt-4 grid grid-cols-2 gap-3">
+                  <div className="bg-slate-50 rounded-lg px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Parish</div>
+                    <div className="text-sm text-slate-700">{hospital.parish}</div>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Coordinates</div>
+                    <div className="text-sm text-slate-700 font-data">{Number(hospital.lat).toFixed(4)}, {Number(hospital.lng).toFixed(4)}</div>
+                  </div>
+                </div>
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${hospital.lat},${hospital.lng}`}
+                  target="_blank" rel="noreferrer"
+                  className="mt-3 inline-flex items-center justify-center gap-2 bg-[#808733] hover:bg-[#6b7029] text-white text-sm font-medium py-2 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#808733] focus-visible:ring-offset-2"
+                >
+                  {Icon.pin('white')} Open in Google Maps
+                </a>
+              </div>
+            </div>
+          </section>
+        )}
 
         <div className="grid lg:grid-cols-2 gap-5">
           {/* Coverage */}
