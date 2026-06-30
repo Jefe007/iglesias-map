@@ -249,6 +249,7 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
               key={church.id}
               position={pos}
               icon={icon}
+              zIndexOffset={church.marker_type === 'hospital' ? 1000 : church.is_distribution_center ? 500 : 0}
               eventHandlers={{ click: () => onSelect(church) }}
             >
               <Popup>

@@ -112,7 +112,7 @@ export default function Home() {
       </header>
 
       {/* Filters */}
-      <div className="bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm z-10">
+      <div className="bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm relative z-[1100]">
         <div className="relative">
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
