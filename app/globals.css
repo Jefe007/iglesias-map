@@ -5,6 +5,19 @@
 .font-data { font-family: 'Fira Code', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 .font-sans-pro { font-family: 'Fira Sans', system-ui, sans-serif; }
 
+/* Samaritan's Purse brand palette */
+:root {
+  --navy: #1b2a4a;
+  --navy-700: #243657;
+  --olive: #7c8729;
+  --olive-600: #6b7522;
+  --olive-50: #f3f4e7;
+}
+.bg-navy { background-color: var(--navy); }
+.bg-olive { background-color: var(--olive); }
+.text-olive { color: var(--olive); }
+.text-navy { color: var(--navy); }
+
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

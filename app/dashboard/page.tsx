@@ -91,17 +91,15 @@ export default function Dashboard() {
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white">
-              {Icon.church('white')}
-            </div>
+            <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-10 h-10 rounded-full object-cover border border-slate-200" />
             <div>
-              <h1 className="text-base font-bold tracking-tight leading-none">La Guaira Distribution Network</h1>
-              <p className="text-slate-400 text-xs mt-1 font-data">DASHBOARD · OVERVIEW</p>
+              <h1 className="text-base font-bold tracking-tight leading-none text-navy">La Guaira Distribution Network</h1>
+              <p className="text-slate-400 text-xs mt-1 font-data">SAMARITAN&apos;S PURSE · DASHBOARD</p>
             </div>
           </div>
           <Link
             href="/"
-            className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="inline-flex items-center gap-2 bg-navy hover:bg-[var(--navy-700)] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] focus-visible:ring-offset-2"
           >
             {Icon.map} Open Map
           </Link>
@@ -111,7 +109,7 @@ export default function Dashboard() {
       <main className="max-w-6xl mx-auto px-6 py-7 space-y-6">
         {/* KPI grid */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Total Churches" value={total} icon={Icon.church} tint="#2563EB" />
+          <KpiCard label="Total Churches" value={total} icon={Icon.church} tint="#1b2a4a" />
           <KpiCard label="Distribution Centers" value={centers.length} icon={Icon.package} tint="#ea580c" />
           <KpiCard label="Validated" value={validated} delta={`${validatedPct}%`} icon={Icon.pin} tint="#059669" />
           <KpiCard label="Pending" value={pending} delta={`${100 - validatedPct}%`} icon={Icon.clock} tint="#d97706" />

@@ -10,29 +10,20 @@ const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false }
 const PARISHES = ['All', 'Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet']
 const ALL_OPTION = 'All'
 
-type ViewMode = 'all' | 'churches' | 'distribution' | 'distribution_hospital' | 'hospital'
-const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
-  { value: 'all',                   label: 'All points' },
-  { value: 'churches',              label: 'Churches only' },
-  { value: 'distribution',          label: 'Distribution centers' },
-  { value: 'distribution_hospital', label: 'Distribution + Hospital' },
-  { value: 'hospital',              label: 'Hospital only' },
-]
+type LayerKey = 'churches' | 'distribution' | 'hospital'
+type Layers = Record<LayerKey, boolean>
 
-function matchesView(c: Church, view: ViewMode) {
-  switch (view) {
-    case 'churches':              return c.marker_type === 'church' && !c.is_distribution_center
-    case 'distribution':          return c.is_distribution_center
-    case 'distribution_hospital': return c.is_distribution_center || c.marker_type === 'hospital'
-    case 'hospital':              return c.marker_type === 'hospital'
-    default:                      return true
-  }
+function layerOf(c: Church): LayerKey {
+  if (c.marker_type === 'hospital') return 'hospital'
+  if (c.is_distribution_center) return 'distribution'
+  return 'churches'
 }
 
 export default function Home() {
   const [churches, setChurches] = useState<Church[]>([])
   const [parish, setParish] = useState(ALL_OPTION)
-  const [viewMode, setViewMode] = useState<ViewMode>('all')
+  const [layers, setLayers] = useState<Layers>({ churches: true, distribution: true, hospital: true })
+  const [layersOpen, setLayersOpen] = useState(false)
   const [selected, setSelected] = useState<Church | null>(null)
   const [loading, setLoading] = useState(true)
   const [settingLocationFor, setSettingLocationFor] = useState<Church | null>(null)
@@ -80,7 +71,7 @@ export default function Home() {
   const distCount = churches.filter(c => c.is_distribution_center).length
   const churchCount = churches.filter(c => c.marker_type !== 'hospital').length
   const filtered = churches.filter(c => {
-    if (!matchesView(c, viewMode)) return false
+    if (!layers[layerOf(c)]) return false
     if (search.trim()) {
       const q = search.toLowerCase()
       return c.name.toLowerCase().includes(q) || (c.pastor_name || '').toLowerCase().includes(q)
@@ -88,24 +79,34 @@ export default function Home() {
     return true
   })
 
+  const layerMeta: { key: LayerKey; label: string; color: string; count: number }[] = [
+    { key: 'churches',     label: 'Churches',             color: '#2563eb', count: churches.filter(c => layerOf(c) === 'churches').length },
+    { key: 'distribution', label: 'Distribution centers', color: '#dc2626', count: churches.filter(c => layerOf(c) === 'distribution').length },
+    { key: 'hospital',     label: 'Field hospital',       color: '#7c8729', count: churches.filter(c => layerOf(c) === 'hospital').length },
+  ]
+  const activeLayers = (Object.keys(layers) as LayerKey[]).filter(k => layers[k]).length
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-blue-900 text-white px-4 py-3 flex items-center justify-between shadow-lg z-10">
-        <div>
-          <h1 className="text-lg font-bold">⛪ La Guaira Churches</h1>
-          <p className="text-blue-200 text-xs">Distribution Centers</p>
+      <header className="bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10">
+        <div className="flex items-center gap-2.5">
+          <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover border-2 border-white/20" />
+          <div>
+            <h1 className="text-base font-bold leading-tight font-sans-pro">La Guaira Distribution Network</h1>
+            <p className="text-white/50 text-[11px] font-data uppercase tracking-wide">Samaritan&apos;s Purse</p>
+          </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-right text-sm">
-            <div className="text-white font-semibold">{churchCount} churches</div>
-            <div className="text-red-300 text-xs">🔴 {distCount} distribution centers</div>
+          <div className="text-right text-sm hidden sm:block">
+            <div className="text-white font-semibold font-data">{churchCount} churches</div>
+            <div className="text-white/50 text-xs font-data">{distCount} distribution centers</div>
           </div>
           <Link
             href="/dashboard"
-            className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors border border-white/20 whitespace-nowrap"
+            className="bg-olive hover:bg-[var(--olive-600)] px-3.5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            📊 Dashboard
+            Dashboard
           </Link>
         </div>
       </header>
@@ -134,30 +135,61 @@ export default function Home() {
           {PARISHES.map(p => <option key={p}>{p}</option>)}
         </select>
 
-        <select
-          value={viewMode}
-          onChange={e => setViewMode(e.target.value as ViewMode)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          {VIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        {/* Layers multi-select dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setLayersOpen(o => !o)}
+            className="flex items-center gap-2 border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] transition-colors"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-500">
+              <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84zM2 12l8.58 3.91a2 2 0 0 0 1.66 0L22 12M2 17l8.58 3.91a2 2 0 0 0 1.66 0L22 17" />
+            </svg>
+            <span className="font-medium text-slate-700">Layers</span>
+            <span className="font-data text-xs bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">{activeLayers}/3</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`w-3.5 h-3.5 text-slate-400 transition-transform ${layersOpen ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+
+          {layersOpen && (
+            <>
+              <div className="fixed inset-0 z-[1200]" onClick={() => setLayersOpen(false)} />
+              <div className="absolute left-0 top-full mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-200 p-1.5 z-[1300]">
+                <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Show on map</div>
+                {layerMeta.map(({ key, label, color, count }) => {
+                  const on = layers[key]
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setLayers(l => ({ ...l, [key]: !l[key] }))}
+                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors text-left"
+                    >
+                      <span className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${on ? 'border-transparent' : 'border-slate-300'}`} style={on ? { background: color } : undefined}>
+                        {on && <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" className="w-3 h-3"><path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                      </span>
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+                      <span className={`text-sm flex-1 ${on ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>{label}</span>
+                      <span className="font-data text-xs text-slate-400">{count}</span>
+                    </button>
+                  )
+                })}
+                <div className="flex gap-1 px-1.5 pt-1.5 mt-1 border-t border-slate-100">
+                  <button onClick={() => setLayers({ churches: true, distribution: true, hospital: true })} className="flex-1 text-xs py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">All</button>
+                  <button onClick={() => setLayers({ churches: false, distribution: false, hospital: false })} className="flex-1 text-xs py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">None</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
 
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
           <input
             type="checkbox"
             checked={showRoutes}
             onChange={e => setShowRoutes(e.target.checked)}
-            className="w-4 h-4 accent-indigo-600"
+            className="w-4 h-4"
+            style={{ accentColor: 'var(--olive)' }}
           />
-          <span>🛣️ Show routes</span>
+          <span className="text-slate-700">Show routes</span>
         </label>
-
-        <div className="ml-auto hidden md:flex gap-3 text-xs text-gray-500">
-          <span className="flex items-center gap-1"><span className="text-red-600 text-base">📍</span> Distribution</span>
-          <span className="flex items-center gap-1"><span className="text-blue-600 text-base">📍</span> Validated</span>
-          <span className="flex items-center gap-1"><span className="text-gray-400 text-base">📍</span> Pending</span>
-          <span className="flex items-center gap-1">🏥 Hospital</span>
-        </div>
       </div>
 
       {/* Main content */}
