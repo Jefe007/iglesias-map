@@ -63,18 +63,30 @@ export default function Home() {
 
   useEffect(() => { fetchChurches() }, [fetchChurches])
 
+  const [exportPreviewMode, setExportPreviewMode] = useState(false)
+  const [exportTime, setExportTime] = useState('')
+
+  // Re-fit the map whenever the chrome (header/filters/sidebar) is hidden or shown,
+  // since hiding it changes the map container's available size.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => mapRef.current?.invalidateSize())
+    return () => cancelAnimationFrame(id)
+  }, [exportPreviewMode])
+
   useEffect(() => {
     const invalidate = () => mapRef.current?.invalidateSize()
+    const handleAfterPrint = () => setExportPreviewMode(false)
     window.addEventListener('beforeprint', invalidate)
-    window.addEventListener('afterprint', invalidate)
+    window.addEventListener('afterprint', handleAfterPrint)
     return () => {
       window.removeEventListener('beforeprint', invalidate)
-      window.removeEventListener('afterprint', invalidate)
+      window.removeEventListener('afterprint', handleAfterPrint)
     }
   }, [])
 
-  const [exportTime, setExportTime] = useState('')
-  const handleExportPdf = () => {
+  const handleStartExportPreview = () => setExportPreviewMode(true)
+  const handleCancelExportPreview = () => setExportPreviewMode(false)
+  const handleConfirmExportPdf = () => {
     setExportTime(new Date().toLocaleString())
     window.print()
   }
@@ -210,7 +222,7 @@ export default function Home() {
       </div>
 
       {/* Header */}
-      <header className="bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10 print:hidden">
+      <header className={`bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10 print:hidden ${exportPreviewMode ? 'hidden' : ''}`}>
         <div className="flex items-center gap-2.5">
           <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover border-2 border-white/20" />
           <div>
@@ -244,7 +256,7 @@ export default function Home() {
       </header>
 
       {/* Filters */}
-      <div className="bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm relative z-[1100] print:hidden">
+      <div className={`bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm relative z-[1100] print:hidden ${exportPreviewMode ? 'hidden' : ''}`}>
         <div className="relative">
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
@@ -325,8 +337,8 @@ export default function Home() {
         </label>
 
         <button
-          onClick={handleExportPdf}
-          title="Export the current map view as a PDF"
+          onClick={handleStartExportPreview}
+          title="Preview and export the current map view as a PDF"
           className="flex items-center gap-1.5 border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] transition-colors"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-500">
@@ -391,6 +403,7 @@ export default function Home() {
             md:static md:w-72 md:border-l md:shadow-none md:rounded-none md:max-h-none md:translate-y-0
             fixed inset-x-0 bottom-0 z-[1100] rounded-t-2xl shadow-2xl max-h-[78vh]
             transition-transform duration-300 ease-out
+            ${exportPreviewMode ? 'hidden' : ''}
             ${sheetOpen || selected ? 'translate-y-0' : 'translate-y-[calc(100%-3.25rem)]'}
           `}
         >
@@ -555,6 +568,24 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* Export PDF preview bar */}
+      {exportPreviewMode && (
+        <div className="fixed inset-x-0 top-0 z-[1600] bg-navy text-white px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 shadow-lg print:hidden">
+          <div className="min-w-0">
+            <div className="font-semibold text-xs sm:text-sm whitespace-nowrap">Export preview</div>
+            <div className="text-white/60 text-[11px] hidden sm:block">This is the area that will be included in the PDF. Pan or zoom the map to adjust it.</div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={handleCancelExportPreview} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white/10 hover:bg-white/20 transition-colors">
+              Cancel
+            </button>
+            <button onClick={handleConfirmExportPdf} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-olive hover:bg-[var(--olive-600)] transition-colors whitespace-nowrap">
+              Download PDF
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Passcode modal */}
       {passcodeModalOpen && (
