@@ -65,6 +65,8 @@ export default function Home() {
 
   const [exportPreviewMode, setExportPreviewMode] = useState(false)
   const [exportTime, setExportTime] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const exportAreaRef = useRef<HTMLDivElement | null>(null)
 
   // Re-fit the map whenever the chrome (header/filters/sidebar) is hidden or shown,
   // since hiding it changes the map container's available size.
@@ -73,22 +75,40 @@ export default function Home() {
     return () => cancelAnimationFrame(id)
   }, [exportPreviewMode])
 
-  useEffect(() => {
-    const invalidate = () => mapRef.current?.invalidateSize()
-    const handleAfterPrint = () => setExportPreviewMode(false)
-    window.addEventListener('beforeprint', invalidate)
-    window.addEventListener('afterprint', handleAfterPrint)
-    return () => {
-      window.removeEventListener('beforeprint', invalidate)
-      window.removeEventListener('afterprint', handleAfterPrint)
-    }
-  }, [])
-
-  const handleStartExportPreview = () => setExportPreviewMode(true)
-  const handleCancelExportPreview = () => setExportPreviewMode(false)
-  const handleConfirmExportPdf = () => {
+  const handleStartExportPreview = () => {
     setExportTime(new Date().toLocaleString())
-    window.print()
+    setExportPreviewMode(true)
+  }
+  const handleCancelExportPreview = () => setExportPreviewMode(false)
+
+  const handleConfirmExportPdf = async () => {
+    const node = exportAreaRef.current
+    if (!node) return
+    setExporting(true)
+    // Hide Leaflet's on-map controls so the exported file only shows the map itself.
+    const controls = node.querySelectorAll<HTMLElement>('.leaflet-control-zoom, .leaflet-control-layers')
+    controls.forEach(el => { el.style.visibility = 'hidden' })
+    try {
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import('html2canvas-pro'),
+        import('jspdf'),
+      ])
+      const canvas = await html2canvas(node, { useCORS: true, backgroundColor: '#ffffff', scale: 2 })
+      const imgData = canvas.toDataURL('image/jpeg', 0.92)
+      const pdf = new jsPDF({
+        orientation: canvas.width >= canvas.height ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [canvas.width, canvas.height],
+      })
+      pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height)
+      pdf.save('la-guaira-distribution-map.pdf')
+      setExportPreviewMode(false)
+    } catch (err) {
+      alert('Could not generate the PDF: ' + (err as Error).message)
+    } finally {
+      controls.forEach(el => { el.style.visibility = '' })
+      setExporting(false)
+    }
   }
 
   const handleSetLocation = async (church: Church, lat: number, lng: number) => {
@@ -208,21 +228,8 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* Print-only header (shown only in the exported PDF) */}
-      <div className="print-header hidden print:flex items-center gap-2.5 px-2 py-3 border-b border-gray-200">
-        <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover" />
-        <div className="flex-1">
-          <h1 className="text-base font-bold leading-tight font-sans-pro text-navy">La Guaira Distribution Network</h1>
-          <p className="text-gray-500 text-[11px] uppercase tracking-wide">Samaritan&apos;s Purse</p>
-        </div>
-        <div className="text-[11px] text-gray-500 text-right">
-          <div>Parish: {parish} · Layers: {activeLayerLabels} · Routes: {showRoutes ? 'On' : 'Off'}</div>
-          <div>Generated {exportTime}</div>
-        </div>
-      </div>
-
       {/* Header */}
-      <header className={`bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10 print:hidden ${exportPreviewMode ? 'hidden' : ''}`}>
+      <header className={`bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10 ${exportPreviewMode ? 'hidden' : ''}`}>
         <div className="flex items-center gap-2.5">
           <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover border-2 border-white/20" />
           <div>
@@ -256,7 +263,7 @@ export default function Home() {
       </header>
 
       {/* Filters */}
-      <div className={`bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm relative z-[1100] print:hidden ${exportPreviewMode ? 'hidden' : ''}`}>
+      <div className={`bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm relative z-[1100] ${exportPreviewMode ? 'hidden' : ''}`}>
         <div className="relative">
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
@@ -358,8 +365,40 @@ export default function Home() {
         )}
       </div>
 
-      {/* Main content */}
-      <div className="print-map-area flex flex-1 overflow-hidden relative">
+      {/* Export preview controls (not part of the captured area) */}
+      {exportPreviewMode && (
+        <div className="bg-navy text-white px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 shadow-lg flex-shrink-0">
+          <div className="min-w-0">
+            <div className="font-semibold text-xs sm:text-sm whitespace-nowrap">Export preview</div>
+            <div className="text-white/60 text-[11px] hidden sm:block">This is exactly what will be saved as a PDF. Pan or zoom the map, then click Download PDF.</div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={handleCancelExportPreview} disabled={exporting} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-50">
+              Cancel
+            </button>
+            <button onClick={handleConfirmExportPdf} disabled={exporting} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-olive hover:bg-[var(--olive-600)] transition-colors whitespace-nowrap disabled:opacity-50">
+              {exporting ? 'Generating…' : 'Download PDF'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Export capture area: this header + the map are what gets saved to the PDF */}
+      <div ref={exportAreaRef} className="flex flex-col flex-1 overflow-hidden">
+        <div className={`items-center gap-2.5 px-3 py-2 border-b border-gray-200 flex-shrink-0 ${exportPreviewMode ? 'flex' : 'hidden'}`}>
+          <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-8 h-8 rounded-full object-cover" />
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-bold leading-tight font-sans-pro text-navy">La Guaira Distribution Network</h1>
+            <p className="text-gray-500 text-[10px] uppercase tracking-wide">Samaritan&apos;s Purse</p>
+          </div>
+          <div className="text-[10px] text-gray-500 text-right flex-shrink-0">
+            <div>Parish: {parish} · Layers: {activeLayerLabels} · Routes: {showRoutes ? 'On' : 'Off'}</div>
+            <div>Generated {exportTime}</div>
+          </div>
+        </div>
+
+        {/* Main content */}
+        <div className="flex flex-1 overflow-hidden relative">
         {/* Map */}
         <div className="flex-1 relative">
           {loading ? (
@@ -567,25 +606,8 @@ export default function Home() {
           )}
           </div>
         </div>
-      </div>
-
-      {/* Export PDF preview bar */}
-      {exportPreviewMode && (
-        <div className="fixed inset-x-0 top-0 z-[1600] bg-navy text-white px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 shadow-lg print:hidden">
-          <div className="min-w-0">
-            <div className="font-semibold text-xs sm:text-sm whitespace-nowrap">Export preview</div>
-            <div className="text-white/60 text-[11px] hidden sm:block">This is the area that will be included in the PDF. Pan or zoom the map to adjust it.</div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={handleCancelExportPreview} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white/10 hover:bg-white/20 transition-colors">
-              Cancel
-            </button>
-            <button onClick={handleConfirmExportPdf} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-olive hover:bg-[var(--olive-600)] transition-colors whitespace-nowrap">
-              Download PDF
-            </button>
-          </div>
         </div>
-      )}
+      </div>
 
       {/* Passcode modal */}
       {passcodeModalOpen && (
