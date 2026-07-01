@@ -109,6 +109,12 @@ function MapClickHandler({ onClick }: { onClick: (lat: number, lng: number) => v
   return null
 }
 
+function MapReadyNotifier({ onReady }: { onReady?: (map: L.Map) => void }) {
+  const map = useMap()
+  useEffect(() => { onReady?.(map) }, [map, onReady])
+  return null
+}
+
 // Detects active base layer and adds label overlay for hybrid mode
 function HybridLabelsManager() {
   const map = useMap()
@@ -174,9 +180,10 @@ interface Props {
   showRoutes?: boolean
   pickingLocation?: boolean
   onPickLocation?: (lat: number, lng: number) => void
+  onMapReady?: (map: L.Map) => void
 }
 
-export default function ChurchMap({ churches, allChurches, selected, onSelect, onSetLocation, settingLocationFor, showRoutes, pickingLocation, onPickLocation }: Props) {
+export default function ChurchMap({ churches, allChurches, selected, onSelect, onSetLocation, settingLocationFor, showRoutes, pickingLocation, onPickLocation, onMapReady }: Props) {
   const groups = groupByParish(churches)
 
   // Routes are computed over the full church set so the network stays complete
@@ -221,6 +228,7 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
 
       <HybridLabelsManager />
       <FlyToSelected church={selected} />
+      <MapReadyNotifier onReady={onMapReady} />
 
       {settingLocationFor && onSetLocation && (
         <MapClickHandler onClick={(lat, lng) => onSetLocation(settingLocationFor, lat, lng)} />

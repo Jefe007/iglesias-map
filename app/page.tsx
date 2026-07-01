@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
+import type { Map as LeafletMap } from 'leaflet'
 import { supabase, Church } from '@/lib/supabase'
 import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStoredPasscode } from '@/lib/api'
 
@@ -32,6 +33,7 @@ export default function Home() {
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [showRoutes, setShowRoutes] = useState(false)
+  const mapRef = useRef<LeafletMap | null>(null)
 
   // Edit mode / passcode
   const [editMode, setEditMode] = useState(false)
@@ -60,6 +62,22 @@ export default function Home() {
   }, [parish])
 
   useEffect(() => { fetchChurches() }, [fetchChurches])
+
+  useEffect(() => {
+    const invalidate = () => mapRef.current?.invalidateSize()
+    window.addEventListener('beforeprint', invalidate)
+    window.addEventListener('afterprint', invalidate)
+    return () => {
+      window.removeEventListener('beforeprint', invalidate)
+      window.removeEventListener('afterprint', invalidate)
+    }
+  }, [])
+
+  const [exportTime, setExportTime] = useState('')
+  const handleExportPdf = () => {
+    setExportTime(new Date().toLocaleString())
+    window.print()
+  }
 
   const handleSetLocation = async (church: Church, lat: number, lng: number) => {
     try {
@@ -174,10 +192,25 @@ export default function Home() {
   ]
   const activeLayers = (Object.keys(layers) as LayerKey[]).filter(k => layers[k]).length
 
+  const activeLayerLabels = layerMeta.filter(l => layers[l.key]).map(l => l.label).join(', ') || 'None'
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
+      {/* Print-only header (shown only in the exported PDF) */}
+      <div className="hidden print:flex items-center gap-2.5 px-2 py-3 border-b border-gray-200">
+        <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover" />
+        <div className="flex-1">
+          <h1 className="text-base font-bold leading-tight font-sans-pro text-navy">La Guaira Distribution Network</h1>
+          <p className="text-gray-500 text-[11px] uppercase tracking-wide">Samaritan&apos;s Purse</p>
+        </div>
+        <div className="text-[11px] text-gray-500 text-right">
+          <div>Parish: {parish} · Layers: {activeLayerLabels} · Routes: {showRoutes ? 'On' : 'Off'}</div>
+          <div>Generated {exportTime}</div>
+        </div>
+      </div>
+
       {/* Header */}
-      <header className="bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10">
+      <header className="bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10 print:hidden">
         <div className="flex items-center gap-2.5">
           <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover border-2 border-white/20" />
           <div>
@@ -211,7 +244,7 @@ export default function Home() {
       </header>
 
       {/* Filters */}
-      <div className="bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm relative z-[1100]">
+      <div className="bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm relative z-[1100] print:hidden">
         <div className="relative">
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
@@ -291,6 +324,17 @@ export default function Home() {
           <span className="text-slate-700">Show routes</span>
         </label>
 
+        <button
+          onClick={handleExportPdf}
+          title="Export the current map view as a PDF"
+          className="flex items-center gap-1.5 border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] transition-colors"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-500">
+            <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+          </svg>
+          <span className="font-medium text-slate-700 hidden sm:inline">Export PDF</span>
+        </button>
+
         {editMode && (
           <button
             onClick={openAddChurch}
@@ -334,6 +378,7 @@ export default function Home() {
                 showRoutes={showRoutes}
                 pickingLocation={pickingForForm}
                 onPickLocation={(lat, lng) => { setPickedCoords({ lat, lng }); setPickingForForm(false) }}
+                onMapReady={map => { mapRef.current = map }}
               />
             </>
           )}
@@ -342,7 +387,7 @@ export default function Home() {
         {/* Sidebar (desktop) / bottom sheet (mobile) */}
         <div
           className={`
-            bg-white flex flex-col overflow-hidden
+            bg-white flex flex-col overflow-hidden print:hidden
             md:static md:w-72 md:border-l md:shadow-none md:rounded-none md:max-h-none md:translate-y-0
             fixed inset-x-0 bottom-0 z-[1100] rounded-t-2xl shadow-2xl max-h-[78vh]
             transition-transform duration-300 ease-out
