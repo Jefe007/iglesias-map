@@ -4,8 +4,6 @@ import { useEffect, useState } from 'react'
 import type { Church } from '@/lib/supabase'
 import { createChurch, updateChurch, uploadPhoto } from '@/lib/api'
 
-const PARISHES = ['Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet']
-
 type FormState = {
   name: string
   pastor_name: string
@@ -22,10 +20,10 @@ type FormState = {
   image_url: string
 }
 
-function emptyForm(): FormState {
+function emptyForm(defaultParish: string): FormState {
   return {
     name: '', pastor_name: '', phone: '', email: '',
-    parish: PARISHES[0], address: '', notes: '',
+    parish: defaultParish, address: '', notes: '',
     marker_type: 'church', is_distribution_center: false,
     distribution_center_id: '', lat: '', lng: '', image_url: '',
   }
@@ -63,6 +61,7 @@ const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm f
 interface Props {
   church: Church | null
   centers: Church[]
+  parishes: string[]
   onClose: () => void
   onSaved: () => void
   pickingLocation: boolean
@@ -71,8 +70,8 @@ interface Props {
   pendingCoords: { lat: number; lng: number } | null
 }
 
-export default function ChurchForm({ church, centers, onClose, onSaved, pickingLocation, onStartPickLocation, onCancelPickLocation, pendingCoords }: Props) {
-  const [form, setForm] = useState<FormState>(() => church ? fromChurch(church) : emptyForm())
+export default function ChurchForm({ church, centers, parishes, onClose, onSaved, pickingLocation, onStartPickLocation, onCancelPickLocation, pendingCoords }: Props) {
+  const [form, setForm] = useState<FormState>(() => church ? fromChurch(church) : emptyForm(parishes[0] || ''))
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -174,9 +173,17 @@ export default function ChurchForm({ church, centers, onClose, onSaved, pickingL
               </Field>
 
               <Field label="Parish">
-                <select value={form.parish} onChange={e => setForm(f => ({ ...f, parish: e.target.value }))} className={inputClass}>
-                  {PARISHES.map(p => <option key={p}>{p}</option>)}
-                </select>
+                <input
+                  required
+                  list="parish-options"
+                  value={form.parish}
+                  onChange={e => setForm(f => ({ ...f, parish: e.target.value }))}
+                  className={inputClass}
+                  placeholder="Type or pick a parish"
+                />
+                <datalist id="parish-options">
+                  {parishes.map(p => <option key={p} value={p} />)}
+                </datalist>
               </Field>
 
               <Field label="Pastor name">
@@ -213,8 +220,18 @@ export default function ChurchForm({ church, centers, onClose, onSaved, pickingL
 
               <Field label="Location">
                 <div className="flex gap-2">
-                  <input value={form.lat} readOnly placeholder="Lat" className={`${inputClass} bg-gray-50`} />
-                  <input value={form.lng} readOnly placeholder="Lng" className={`${inputClass} bg-gray-50`} />
+                  <input
+                    type="number" step="any"
+                    value={form.lat}
+                    onChange={e => setForm(f => ({ ...f, lat: e.target.value }))}
+                    placeholder="Lat" className={inputClass}
+                  />
+                  <input
+                    type="number" step="any"
+                    value={form.lng}
+                    onChange={e => setForm(f => ({ ...f, lng: e.target.value }))}
+                    placeholder="Lng" className={inputClass}
+                  />
                 </div>
                 <button type="button" onClick={onStartPickLocation} className="mt-2 w-full py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors">
                   📍 Pick on map

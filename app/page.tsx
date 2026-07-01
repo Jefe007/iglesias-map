@@ -9,7 +9,7 @@ import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStore
 const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false })
 const ChurchForm = dynamic(() => import('@/components/ChurchForm'), { ssr: false })
 
-const PARISHES = ['All', 'Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet']
+const DEFAULT_PARISHES = ['Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet', 'Caracas']
 const ALL_OPTION = 'All'
 
 type LayerKey = 'churches' | 'distribution' | 'hospital'
@@ -75,6 +75,7 @@ export default function Home() {
   const openChurch = (c: Church) => { setSelected(c); setSheetOpen(true) }
 
   const centers = churches.filter(c => c.is_distribution_center)
+  const parishOptions = Array.from(new Set([...DEFAULT_PARISHES, ...churches.map(c => c.parish)])).sort()
 
   const reassignCenter = async (church: Church, centerId: string) => {
     try {
@@ -230,7 +231,8 @@ export default function Home() {
           onChange={e => setParish(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          {PARISHES.map(p => <option key={p}>{p}</option>)}
+          <option>{ALL_OPTION}</option>
+          {parishOptions.map(p => <option key={p}>{p}</option>)}
         </select>
 
         {/* Layers multi-select dropdown */}
@@ -551,6 +553,7 @@ export default function Home() {
         <ChurchForm
           church={formChurch}
           centers={centers}
+          parishes={parishOptions}
           onClose={closeForm}
           onSaved={() => { setFormOpen(false); setFormChurch(null); setPickingForForm(false); setPickedCoords(null); fetchChurches() }}
           pickingLocation={pickingForForm}
