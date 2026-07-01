@@ -104,8 +104,8 @@ function FlyToSelected({ church }: { church: Church | null }) {
   return null
 }
 
-function MapClickHandler({ church, onSetLocation }: { church: Church; onSetLocation: (c: Church, lat: number, lng: number) => void }) {
-  useMapEvents({ click(e) { onSetLocation(church, e.latlng.lat, e.latlng.lng) } })
+function MapClickHandler({ onClick }: { onClick: (lat: number, lng: number) => void }) {
+  useMapEvents({ click(e) { onClick(e.latlng.lat, e.latlng.lng) } })
   return null
 }
 
@@ -172,9 +172,11 @@ interface Props {
   onSetLocation?: (church: Church, lat: number, lng: number) => void
   settingLocationFor?: Church | null
   showRoutes?: boolean
+  pickingLocation?: boolean
+  onPickLocation?: (lat: number, lng: number) => void
 }
 
-export default function ChurchMap({ churches, allChurches, selected, onSelect, onSetLocation, settingLocationFor, showRoutes }: Props) {
+export default function ChurchMap({ churches, allChurches, selected, onSelect, onSetLocation, settingLocationFor, showRoutes, pickingLocation, onPickLocation }: Props) {
   const groups = groupByParish(churches)
 
   // Routes are computed over the full church set so the network stays complete
@@ -189,7 +191,7 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
     <MapContainer
       center={[10.6017, -66.9297]}
       zoom={12}
-      style={{ height: '100%', width: '100%', cursor: settingLocationFor ? 'crosshair' : undefined }}
+      style={{ height: '100%', width: '100%', cursor: (settingLocationFor || pickingLocation) ? 'crosshair' : undefined }}
     >
       <LayersControl position="topright">
         <LayersControl.BaseLayer checked name="Mapa">
@@ -221,7 +223,11 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
       <FlyToSelected church={selected} />
 
       {settingLocationFor && onSetLocation && (
-        <MapClickHandler church={settingLocationFor} onSetLocation={onSetLocation} />
+        <MapClickHandler onClick={(lat, lng) => onSetLocation(settingLocationFor, lat, lng)} />
+      )}
+
+      {pickingLocation && onPickLocation && (
+        <MapClickHandler onClick={onPickLocation} />
       )}
 
       {/* Distribution routes: line from each center to its assigned churches */}
@@ -254,13 +260,13 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
             >
               <Popup>
                 <div className="min-w-[180px]">
+                  {church.image_url && (
+                    <img src={church.image_url} alt={church.name}
+                      onError={e => { e.currentTarget.style.display = 'none' }}
+                      className="w-full h-24 object-cover rounded-md mb-2" />
+                  )}
                   {church.marker_type === 'hospital' ? (
                     <>
-                      {church.image_url && (
-                        <img src={church.image_url} alt={church.name}
-                          onError={e => { e.currentTarget.style.display = 'none' }}
-                          className="w-full h-24 object-cover rounded-md mb-2" />
-                      )}
                       <div className="text-[#808733] text-xs font-bold mb-0.5">🏥 Field Hospital</div>
                       <div className="font-bold text-sm leading-tight">{church.name}</div>
                       <div className="text-gray-500 text-xs mt-0.5">📍 {church.parish}</div>

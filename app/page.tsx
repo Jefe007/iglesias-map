@@ -4,8 +4,10 @@ import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { supabase, Church } from '@/lib/supabase'
+import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStoredPasscode } from '@/lib/api'
 
 const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false })
+const ChurchForm = dynamic(() => import('@/components/ChurchForm'), { ssr: false })
 
 const PARISHES = ['All', 'Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet']
 const ALL_OPTION = 'All'
@@ -31,6 +33,23 @@ export default function Home() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [showRoutes, setShowRoutes] = useState(false)
 
+  // Edit mode / passcode
+  const [editMode, setEditMode] = useState(false)
+  const [passcodeModalOpen, setPasscodeModalOpen] = useState(false)
+  const [passcodeInput, setPasscodeInput] = useState('')
+  const [passcodeError, setPasscodeError] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+
+  // Add/Edit form
+  const [formOpen, setFormOpen] = useState(false)
+  const [formChurch, setFormChurch] = useState<Church | null>(null)
+  const [pickingForForm, setPickingForForm] = useState(false)
+  const [pickedCoords, setPickedCoords] = useState<{ lat: number; lng: number } | null>(null)
+
+  // Delete confirmation
+  const [confirmDeleteChurch, setConfirmDeleteChurch] = useState<Church | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
   const fetchChurches = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('churches').select('*').order('parish').order('name')
@@ -43,10 +62,14 @@ export default function Home() {
   useEffect(() => { fetchChurches() }, [fetchChurches])
 
   const handleSetLocation = async (church: Church, lat: number, lng: number) => {
-    await supabase.from('churches').update({ lat, lng, geocode_status: 'validado' }).eq('id', church.id)
-    setSettingLocationFor(null)
-    fetchChurches()
-    setSelected(prev => prev?.id === church.id ? { ...prev, lat, lng, geocode_status: 'validado' } : prev)
+    try {
+      await updateChurch(church.id, { lat, lng, geocode_status: 'validado' })
+      setSettingLocationFor(null)
+      fetchChurches()
+      setSelected(prev => prev?.id === church.id ? { ...prev, lat, lng, geocode_status: 'validado' } : prev)
+    } catch (e) {
+      alert((e as Error).message)
+    }
   }
 
   const openChurch = (c: Church) => { setSelected(c); setSheetOpen(true) }
@@ -54,18 +77,82 @@ export default function Home() {
   const centers = churches.filter(c => c.is_distribution_center)
 
   const reassignCenter = async (church: Church, centerId: string) => {
-    await supabase.from('churches').update({ distribution_center_id: centerId || null }).eq('id', church.id)
-    fetchChurches()
-    setSelected(prev => prev?.id === church.id ? { ...prev, distribution_center_id: centerId || null } : prev)
+    try {
+      await updateChurch(church.id, { distribution_center_id: centerId || null })
+      fetchChurches()
+      setSelected(prev => prev?.id === church.id ? { ...prev, distribution_center_id: centerId || null } : prev)
+    } catch (e) {
+      alert((e as Error).message)
+    }
   }
 
   const toggleDistribution = async (church: Church) => {
-    await supabase
-      .from('churches')
-      .update({ is_distribution_center: !church.is_distribution_center })
-      .eq('id', church.id)
-    fetchChurches()
-    setSelected(prev => prev?.id === church.id ? { ...prev, is_distribution_center: !prev.is_distribution_center } : prev)
+    try {
+      await updateChurch(church.id, { is_distribution_center: !church.is_distribution_center })
+      fetchChurches()
+      setSelected(prev => prev?.id === church.id ? { ...prev, is_distribution_center: !prev.is_distribution_center } : prev)
+    } catch (e) {
+      alert((e as Error).message)
+    }
+  }
+
+  const activateEditMode = async () => {
+    const stored = getStoredPasscode()
+    if (stored) {
+      const ok = await verifyPasscode(stored)
+      if (ok) { setEditMode(true); return }
+    }
+    setPasscodeModalOpen(true)
+  }
+
+  const submitPasscode = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setVerifying(true)
+    const ok = await verifyPasscode(passcodeInput)
+    setVerifying(false)
+    if (ok) {
+      setStoredPasscode(passcodeInput)
+      setEditMode(true)
+      setPasscodeModalOpen(false)
+      setPasscodeInput('')
+      setPasscodeError(false)
+    } else {
+      setPasscodeError(true)
+    }
+  }
+
+  const openAddChurch = () => {
+    setPickedCoords(null)
+    setFormChurch(null)
+    setFormOpen(true)
+  }
+
+  const openEditChurch = (church: Church) => {
+    setPickedCoords(null)
+    setFormChurch(church)
+    setFormOpen(true)
+  }
+
+  const closeForm = () => {
+    setFormOpen(false)
+    setFormChurch(null)
+    setPickingForForm(false)
+    setPickedCoords(null)
+  }
+
+  const handleDeleteConfirmed = async () => {
+    if (!confirmDeleteChurch) return
+    setDeleting(true)
+    try {
+      await deleteChurch(confirmDeleteChurch.id)
+      setConfirmDeleteChurch(null)
+      setSelected(null)
+      fetchChurches()
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const distCount = churches.filter(c => c.is_distribution_center).length
@@ -97,11 +184,22 @@ export default function Home() {
             <p className="text-white/50 text-[11px] font-data uppercase tracking-wide">Samaritan&apos;s Purse</p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="text-right text-sm hidden sm:block">
             <div className="text-white font-semibold font-data">{churchCount} churches</div>
             <div className="text-white/50 text-xs font-data">{distCount} distribution centers</div>
           </div>
+          <button
+            onClick={editMode ? () => setEditMode(false) : activateEditMode}
+            title={editMode ? 'Exit edit mode' : 'Enter edit mode'}
+            className={`p-2 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${editMode ? 'bg-olive text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
+          >
+            {editMode ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 9.9-1" /></svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+            )}
+          </button>
           <Link
             href="/dashboard"
             className="bg-olive hover:bg-[var(--olive-600)] px-3.5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
@@ -190,6 +288,16 @@ export default function Home() {
           />
           <span className="text-slate-700">Show routes</span>
         </label>
+
+        {editMode && (
+          <button
+            onClick={openAddChurch}
+            className="ml-auto flex items-center gap-1.5 bg-navy text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-[var(--navy-700)] transition-colors"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+            Add church
+          </button>
+        )}
       </div>
 
       {/* Main content */}
@@ -208,6 +316,12 @@ export default function Home() {
                   <button onClick={() => setSettingLocationFor(null)} className="ml-3 text-yellow-700 hover:text-yellow-900">✕</button>
                 </div>
               )}
+              {pickingForForm && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
+                  📍 Tap the map to place the pin
+                  <button onClick={() => setPickingForForm(false)} className="ml-3 text-yellow-700 hover:text-yellow-900">✕</button>
+                </div>
+              )}
               <ChurchMap
                 churches={filtered}
                 allChurches={churches}
@@ -216,6 +330,8 @@ export default function Home() {
                 onSetLocation={handleSetLocation}
                 settingLocationFor={settingLocationFor}
                 showRoutes={showRoutes}
+                pickingLocation={pickingForForm}
+                onPickLocation={(lat, lng) => { setPickedCoords({ lat, lng }); setPickingForForm(false) }}
               />
             </>
           )}
@@ -276,10 +392,21 @@ export default function Home() {
                   </a>
                 )}
               </div>
+              {editMode && (
+                <div className="flex gap-2 mt-4">
+                  <button onClick={() => openEditChurch(selected)} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Edit</button>
+                  <button onClick={() => setConfirmDeleteChurch(selected)} className="flex-1 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+                </div>
+              )}
             </div>
           ) : selected ? (
             <div className="p-4">
               <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Back to list</button>
+              {selected.image_url && (
+                <img src={selected.image_url} alt={selected.name}
+                  onError={e => { e.currentTarget.style.display = 'none' }}
+                  className="w-full h-40 object-cover rounded-xl mb-3 border border-slate-200" />
+              )}
               <div className="flex gap-2 flex-wrap mb-3">
                 <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${selected.is_distribution_center ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                   {selected.is_distribution_center ? '🔴 Distribution Center' : '🔵 Church'}
@@ -298,16 +425,20 @@ export default function Home() {
                 {!selected.is_distribution_center && (
                   <div className="bg-gray-50 rounded-lg p-3">
                     <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Distribution Center</div>
-                    <select
-                      value={selected.distribution_center_id || ''}
-                      onChange={e => reassignCenter(selected, e.target.value)}
-                      className="w-full bg-white border border-gray-300 rounded-md px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="">— Unassigned —</option>
-                      {centers.map(c => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.parish})</option>
-                      ))}
-                    </select>
+                    {editMode ? (
+                      <select
+                        value={selected.distribution_center_id || ''}
+                        onChange={e => reassignCenter(selected, e.target.value)}
+                        className="w-full bg-white border border-gray-300 rounded-md px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="">— Unassigned —</option>
+                        {centers.map(c => (
+                          <option key={c.id} value={c.id}>{c.name} ({c.parish})</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="text-gray-800">{centers.find(c => c.id === selected.distribution_center_id)?.name || '— Unassigned —'}</div>
+                    )}
                   </div>
                 )}
                 {selected.phone && (
@@ -324,19 +455,27 @@ export default function Home() {
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => toggleDistribution(selected)}
-                className={`mt-4 w-full py-2 rounded-lg text-sm font-medium transition-colors ${selected.is_distribution_center ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-red-600 text-white hover:bg-red-700'}`}
-              >
-                {selected.is_distribution_center ? 'Remove as distribution center' : '🔴 Mark as distribution center'}
-              </button>
-              {selected.geocode_status !== 'validado' && (
-                <button
-                  onClick={() => setSettingLocationFor(selected)}
-                  className="mt-2 w-full py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors"
-                >
-                  📍 Pin location manually on map
-                </button>
+              {editMode && (
+                <>
+                  <button
+                    onClick={() => toggleDistribution(selected)}
+                    className={`mt-4 w-full py-2 rounded-lg text-sm font-medium transition-colors ${selected.is_distribution_center ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-red-600 text-white hover:bg-red-700'}`}
+                  >
+                    {selected.is_distribution_center ? 'Remove as distribution center' : '🔴 Mark as distribution center'}
+                  </button>
+                  {selected.geocode_status !== 'validado' && (
+                    <button
+                      onClick={() => setSettingLocationFor(selected)}
+                      className="mt-2 w-full py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors"
+                    >
+                      📍 Pin location manually on map
+                    </button>
+                  )}
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={() => openEditChurch(selected)} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Edit</button>
+                    <button onClick={() => setConfirmDeleteChurch(selected)} className="flex-1 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+                  </div>
+                </>
               )}
             </div>
           ) : (
@@ -369,6 +508,57 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* Passcode modal */}
+      {passcodeModalOpen && (
+        <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
+          <form onSubmit={submitPasscode} className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
+            <h3 className="font-bold text-gray-900 mb-1">Edit mode</h3>
+            <p className="text-xs text-gray-500 mb-3">Enter the passcode to add, edit, or delete churches.</p>
+            <input
+              type="password"
+              autoFocus
+              value={passcodeInput}
+              onChange={e => { setPasscodeInput(e.target.value); setPasscodeError(false) }}
+              className={`w-full border rounded-lg px-3 py-2 text-sm mb-1 focus:outline-none focus:ring-2 focus:ring-[var(--olive)] ${passcodeError ? 'border-red-400' : 'border-gray-300'}`}
+              placeholder="Passcode"
+            />
+            {passcodeError && <p className="text-xs text-red-600 mb-2">Incorrect passcode</p>}
+            <div className="flex gap-2 mt-3">
+              <button type="button" onClick={() => { setPasscodeModalOpen(false); setPasscodeInput(''); setPasscodeError(false) }} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={verifying} className="flex-1 py-2 rounded-lg bg-navy text-white text-sm font-medium hover:bg-[var(--navy-700)] disabled:opacity-50">{verifying ? 'Checking…' : 'Unlock'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDeleteChurch && (
+        <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
+            <h3 className="font-bold text-gray-900 mb-1">Delete church?</h3>
+            <p className="text-sm text-gray-600 mb-4">This will permanently remove <strong>{confirmDeleteChurch.name}</strong> and its routes from the map.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDeleteChurch(null)} disabled={deleting} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+              <button onClick={handleDeleteConfirmed} disabled={deleting} className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50">{deleting ? 'Deleting…' : 'Delete'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit church form */}
+      {formOpen && (
+        <ChurchForm
+          church={formChurch}
+          centers={centers}
+          onClose={closeForm}
+          onSaved={() => { setFormOpen(false); setFormChurch(null); setPickingForForm(false); setPickedCoords(null); fetchChurches() }}
+          pickingLocation={pickingForForm}
+          onStartPickLocation={() => { setSettingLocationFor(null); setPickingForForm(true) }}
+          onCancelPickLocation={() => setPickingForForm(false)}
+          pendingCoords={pickedCoords}
+        />
+      )}
     </div>
   )
 }
