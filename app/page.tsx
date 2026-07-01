@@ -209,7 +209,7 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Print-only header (shown only in the exported PDF) */}
-      <div className="hidden print:flex items-center gap-2.5 px-2 py-3 border-b border-gray-200">
+      <div className="print-header hidden print:flex items-center gap-2.5 px-2 py-3 border-b border-gray-200">
         <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover" />
         <div className="flex-1">
           <h1 className="text-base font-bold leading-tight font-sans-pro text-navy">La Guaira Distribution Network</h1>
@@ -359,7 +359,7 @@ export default function Home() {
       </div>
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="print-map-area flex flex-1 overflow-hidden relative">
         {/* Map */}
         <div className="flex-1 relative">
           {loading ? (
