@@ -275,14 +275,14 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
                   )}
                   {church.marker_type === 'hospital' ? (
                     <>
-                      <div className="text-[#808733] text-xs font-bold mb-0.5">🏥 Field Hospital</div>
+                      <div className="text-[#808733] text-xs font-bold mb-0.5">🏥 Hospital de Campaña</div>
                       <div className="font-bold text-sm leading-tight">{church.name}</div>
                       <div className="text-gray-500 text-xs mt-0.5">📍 {church.parish}</div>
                     </>
                   ) : (
                     <>
                       {church.is_distribution_center && (
-                        <div className="text-red-600 text-xs font-bold mb-1">🔴 Distribution Center</div>
+                        <div className="text-red-600 text-xs font-bold mb-1">🔴 Centro de Distribución</div>
                       )}
                       <div className="font-bold text-sm leading-tight">{church.name}</div>
                       {church.pastor_name && <div className="text-gray-600 text-xs mt-1">👤 {church.pastor_name}</div>}
@@ -294,7 +294,7 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
                         </a>
                       )}
                       <div className={`mt-2 text-xs px-1.5 py-0.5 rounded-full inline-block ${church.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {church.geocode_status === 'validado' ? '✓ Validated' : '⏳ Pending'}
+                        {church.geocode_status === 'validado' ? '✓ Validado' : '⏳ Pendiente'}
                       </div>
                     </>
                   )}

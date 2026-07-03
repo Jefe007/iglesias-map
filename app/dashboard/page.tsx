@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { supabase, Church } from '@/lib/supabase'
+import { Church, Distribution } from '@/lib/supabase'
+import { getChurches, getAllDistributions } from '@/lib/offlineStore'
+
+type DistributionWithCenter = Distribution & { center: { name: string; parish: string } | null }
 
 const CENTER_COLORS = ['#7c3aed', '#0891b2', '#db2777', '#ea580c']
 
@@ -28,6 +31,11 @@ const Icon = {
       <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
     </svg>
   ),
+  users: (c: string) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  ),
   map: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
       <path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0zM15 5.764v15M9 3.236v15" />
@@ -38,11 +46,16 @@ const Icon = {
 export default function Dashboard() {
   const [churches, setChurches] = useState<Church[]>([])
   const [loading, setLoading] = useState(true)
+  const [distributions, setDistributions] = useState<DistributionWithCenter[]>([])
 
   useEffect(() => {
-    supabase.from('churches').select('*').then(({ data }) => {
-      setChurches(data || [])
+    getChurches().then(({ data }) => {
+      setChurches(data)
       setLoading(false)
+    })
+    Promise.all([getAllDistributions(), getChurches()]).then(([distResult, churchResult]) => {
+      const centerById = new Map(churchResult.data.map(c => [c.id, { name: c.name, parish: c.parish }]))
+      setDistributions(distResult.data.map(d => ({ ...d, center: centerById.get(d.distribution_center_id) || null })))
     })
   }, [])
 
@@ -74,12 +87,16 @@ export default function Dashboard() {
   const maxCoverage = Math.max(1, ...coverage.map(c => c.count))
   const unassigned = regular.filter(c => !c.distribution_center_id).length
 
+  const totalDistributions = distributions.length
+  const totalFamiliesServed = distributions.reduce((sum, d) => sum + (d.families_served || 0), 0)
+  const recentDistributions = distributions.slice(0, 8)
+
   if (loading) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-[#F8FAFC] text-slate-400 font-sans-pro">
         <div className="flex items-center gap-3">
           <span className="w-4 h-4 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
-          Loading dashboard…
+          Cargando panel…
         </div>
       </div>
     )
@@ -93,15 +110,15 @@ export default function Dashboard() {
           <div className="flex items-center gap-3">
             <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-10 h-10 rounded-full object-cover border border-slate-200" />
             <div>
-              <h1 className="text-base font-bold tracking-tight leading-none text-navy">La Guaira Distribution Network</h1>
-              <p className="text-slate-400 text-xs mt-1 font-data">SAMARITAN&apos;S PURSE · DASHBOARD</p>
+              <h1 className="text-base font-bold tracking-tight leading-none text-navy">Red de Distribución La Guaira</h1>
+              <p className="text-slate-400 text-xs mt-1 font-data">SAMARITAN&apos;S PURSE · PANEL</p>
             </div>
           </div>
           <Link
             href="/"
             className="inline-flex items-center gap-2 bg-navy hover:bg-[var(--navy-700)] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] focus-visible:ring-offset-2"
           >
-            {Icon.map} Open Map
+            {Icon.map} Abrir Mapa
           </Link>
         </div>
       </header>
@@ -109,18 +126,18 @@ export default function Dashboard() {
       <main className="max-w-6xl mx-auto px-6 py-7 space-y-6">
         {/* KPI grid */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Total Churches" value={total} icon={Icon.church} tint="#1b2a4a" />
-          <KpiCard label="Distribution Centers" value={centers.length} icon={Icon.package} tint="#ea580c" />
-          <KpiCard label="Validated" value={validated} delta={`${validatedPct}%`} icon={Icon.pin} tint="#059669" />
-          <KpiCard label="Pending" value={pending} delta={`${100 - validatedPct}%`} icon={Icon.clock} tint="#d97706" />
+          <KpiCard label="Total de Iglesias" value={total} icon={Icon.church} tint="#1b2a4a" />
+          <KpiCard label="Centros de Distribución" value={centers.length} icon={Icon.package} tint="#ea580c" />
+          <KpiCard label="Validadas" value={validated} delta={`${validatedPct}%`} icon={Icon.pin} tint="#059669" />
+          <KpiCard label="Pendientes" value={pending} delta={`${100 - validatedPct}%`} icon={Icon.clock} tint="#d97706" />
         </section>
 
         {/* Validation progress */}
         <section className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-end justify-between mb-3">
             <div>
-              <h2 className="text-sm font-semibold text-slate-700">Location Validation</h2>
-              <p className="text-xs text-slate-400 mt-0.5">GPS-verified coordinates vs. parish approximations</p>
+              <h2 className="text-sm font-semibold text-slate-700">Validación de Ubicación</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Coordenadas verificadas por GPS vs. aproximaciones por parroquia</p>
             </div>
             <span className="font-data text-2xl font-bold text-emerald-600 leading-none">{validatedPct}<span className="text-base">%</span></span>
           </div>
@@ -129,8 +146,8 @@ export default function Dashboard() {
             <div className="h-full bg-amber-400/70 transition-[width] duration-700" style={{ width: `${100 - validatedPct}%` }} />
           </div>
           <div className="flex justify-between mt-2 text-xs font-data text-slate-500">
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> {validated} validated</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" /> {pending} pending</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> {validated} validadas</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" /> {pending} pendientes</span>
           </div>
         </section>
 
@@ -150,18 +167,18 @@ export default function Dashboard() {
                   <img src="/logosp.jpg" alt="Samaritan's Purse"
                     className="w-8 h-8 rounded-full object-cover border border-slate-200" />
                   <span className="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#80873318] text-[#5f6526]">
-                    Field Hospital
+                    Hospital de Campaña
                   </span>
                 </div>
                 <h2 className="text-base font-bold text-slate-900">{hospital.name}</h2>
                 <p className="text-sm text-slate-500 mt-1">{hospital.notes}</p>
                 <div className="mt-auto pt-4 grid grid-cols-2 gap-3">
                   <div className="bg-slate-50 rounded-lg px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Parish</div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Parroquia</div>
                     <div className="text-sm text-slate-700">{hospital.parish}</div>
                   </div>
                   <div className="bg-slate-50 rounded-lg px-3 py-2">
-                    <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Coordinates</div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Coordenadas</div>
                     <div className="text-sm text-slate-700 font-data">{Number(hospital.lat).toFixed(4)}, {Number(hospital.lng).toFixed(4)}</div>
                   </div>
                 </div>
@@ -170,18 +187,67 @@ export default function Dashboard() {
                   target="_blank" rel="noreferrer"
                   className="mt-3 inline-flex items-center justify-center gap-2 bg-[#808733] hover:bg-[#6b7029] text-white text-sm font-medium py-2 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#808733] focus-visible:ring-offset-2"
                 >
-                  {Icon.pin('white')} Open in Google Maps
+                  {Icon.pin('white')} Abrir en Google Maps
                 </a>
               </div>
             </div>
           </section>
         )}
 
+        {/* Distribution log */}
+        <section className="bg-white rounded-xl border border-slate-200 p-5">
+          <h2 className="text-sm font-semibold text-slate-700 mb-1">Ayuda Entregada</h2>
+          <p className="text-xs text-slate-400 mb-4">Registro de entregas de alimentos y agua en los centros de distribución</p>
+          <div className="grid grid-cols-2 gap-4 mb-5">
+            <div className="bg-slate-50 rounded-lg p-4 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#ea580c14' }}>
+                {Icon.package('#ea580c')}
+              </div>
+              <div>
+                <div className="font-data text-2xl font-bold text-slate-900 leading-none tabular-nums">{totalDistributions}</div>
+                <div className="text-xs text-slate-500 mt-1">Entregas registradas</div>
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-4 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#05966914' }}>
+                {Icon.users('#059669')}
+              </div>
+              <div>
+                <div className="font-data text-2xl font-bold text-slate-900 leading-none tabular-nums">{totalFamiliesServed}</div>
+                <div className="text-xs text-slate-500 mt-1">Familias atendidas</div>
+              </div>
+            </div>
+          </div>
+          {recentDistributions.length === 0 ? (
+            <p className="text-xs text-slate-400">Aún no se han registrado entregas. Se registran desde el mapa, al seleccionar un centro de distribución en modo edición.</p>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Entregas recientes</div>
+              {recentDistributions.map(d => (
+                <div key={d.id} className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-slate-800 truncate">{d.center?.name || 'Centro desconocido'}</div>
+                    <div className="text-xs text-slate-500 truncate">{d.items}</div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-xs font-data text-slate-500">
+                      {new Date(d.distributed_at + 'T00:00:00').toLocaleDateString('es-VE', { day: 'numeric', month: 'short' })}
+                    </div>
+                    {d.families_served != null && (
+                      <div className="text-xs text-slate-400">{d.families_served} familias</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         <div className="grid lg:grid-cols-2 gap-5">
           {/* Coverage */}
           <section className="bg-white rounded-xl border border-slate-200 p-5">
-            <h2 className="text-sm font-semibold text-slate-700 mb-1">Coverage by Center</h2>
-            <p className="text-xs text-slate-400 mb-4">Churches assigned to each distribution hub</p>
+            <h2 className="text-sm font-semibold text-slate-700 mb-1">Cobertura por Centro</h2>
+            <p className="text-xs text-slate-400 mb-4">Iglesias asignadas a cada centro de distribución</p>
             <div className="space-y-3.5">
               {coverage.map(({ center, color, count }) => (
                 <div key={center.id} className="group">
@@ -199,7 +265,7 @@ export default function Dashboard() {
               ))}
               {unassigned > 0 && (
                 <div className="text-xs text-amber-600 pt-3 mt-1 border-t border-slate-100 font-data">
-                  {unassigned} church{unassigned !== 1 ? 'es' : ''} unassigned
+                  {unassigned} iglesia{unassigned !== 1 ? 's' : ''} sin asignar
                 </div>
               )}
             </div>
@@ -207,8 +273,8 @@ export default function Dashboard() {
 
           {/* By parish */}
           <section className="bg-white rounded-xl border border-slate-200 p-5">
-            <h2 className="text-sm font-semibold text-slate-700 mb-1">Churches by Parish</h2>
-            <p className="text-xs text-slate-400 mb-4">{byParish.length} parishes across La Guaira</p>
+            <h2 className="text-sm font-semibold text-slate-700 mb-1">Iglesias por Parroquia</h2>
+            <p className="text-xs text-slate-400 mb-4">{byParish.length} parroquias en La Guaira</p>
             <div className="space-y-2.5">
               {byParish.map(([parish, n]) => (
                 <div key={parish} className="flex items-center gap-3">
@@ -224,7 +290,7 @@ export default function Dashboard() {
         </div>
 
         <footer className="text-center text-xs text-slate-400 font-data pt-2">
-          {total} CHURCHES · {byParish.length} PARISHES · {centers.length} CENTERS
+          {total} IGLESIAS · {byParish.length} PARROQUIAS · {centers.length} CENTROS
         </footer>
       </main>
     </div>

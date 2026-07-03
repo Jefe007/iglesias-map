@@ -4,11 +4,14 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import type { Map as LeafletMap } from 'leaflet'
-import { supabase, Church } from '@/lib/supabase'
-import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStoredPasscode } from '@/lib/api'
+import { supabase, Church, Distribution } from '@/lib/supabase'
+import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStoredPasscode, deleteDistribution } from '@/lib/api'
+import { getChurches as getChurchesOffline, getDistributionsForCenter } from '@/lib/offlineStore'
+import { useOfflineStatus } from '@/lib/useOfflineStatus'
 
 const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false })
 const ChurchForm = dynamic(() => import('@/components/ChurchForm'), { ssr: false })
+const DistributionForm = dynamic(() => import('@/components/DistributionForm'), { ssr: false })
 
 const DEFAULT_PARISHES = ['Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet', 'Caracas']
 const ALL_OPTION = 'All'
@@ -23,7 +26,7 @@ function layerOf(c: Church): LayerKey {
 }
 
 export default function Home() {
-  const [churches, setChurches] = useState<Church[]>([])
+  const [allChurches, setAllChurches] = useState<Church[]>([])
   const [parish, setParish] = useState(ALL_OPTION)
   const [layers, setLayers] = useState<Layers>({ churches: true, distribution: true, hospital: true })
   const [layersOpen, setLayersOpen] = useState(false)
@@ -52,16 +55,60 @@ export default function Home() {
   const [confirmDeleteChurch, setConfirmDeleteChurch] = useState<Church | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Distribution log (for the selected distribution center)
+  const [distributions, setDistributions] = useState<Distribution[]>([])
+  const [distributionsLoading, setDistributionsLoading] = useState(false)
+  const [distributionFormOpen, setDistributionFormOpen] = useState(false)
+  const [confirmDeleteDistribution, setConfirmDeleteDistribution] = useState<Distribution | null>(null)
+  const [deletingDistribution, setDeletingDistribution] = useState(false)
+
+  const { online, pending, syncing } = useOfflineStatus()
+
   const fetchChurches = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('churches').select('*').order('parish').order('name')
-    if (parish !== ALL_OPTION) q = q.eq('parish', parish)
-    const { data } = await q
-    setChurches(data || [])
+    const { data } = await getChurchesOffline()
+    setAllChurches(data)
     setLoading(false)
-  }, [parish])
+  }, [])
+
+  const churches = parish === ALL_OPTION ? allChurches : allChurches.filter(c => c.parish === parish)
 
   useEffect(() => { fetchChurches() }, [fetchChurches])
+
+  const wasSyncing = useRef(false)
+  useEffect(() => {
+    if (wasSyncing.current && !syncing) fetchChurches()
+    wasSyncing.current = syncing
+  }, [syncing, fetchChurches])
+
+  const fetchDistributions = useCallback(async (centerId: string) => {
+    setDistributionsLoading(true)
+    const { data } = await getDistributionsForCenter(centerId)
+    setDistributions(data)
+    setDistributionsLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (selected && selected.is_distribution_center) {
+      fetchDistributions(selected.id)
+    } else {
+      setDistributions([])
+    }
+  }, [selected, fetchDistributions])
+
+  const handleDeleteDistributionConfirmed = async () => {
+    if (!confirmDeleteDistribution) return
+    setDeletingDistribution(true)
+    try {
+      await deleteDistribution(confirmDeleteDistribution.id)
+      setConfirmDeleteDistribution(null)
+      if (selected) fetchDistributions(selected.id)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setDeletingDistribution(false)
+    }
+  }
 
   const [exportPreviewMode, setExportPreviewMode] = useState(false)
   const [exportTime, setExportTime] = useState('')
@@ -104,7 +151,7 @@ export default function Home() {
       pdf.save('la-guaira-distribution-map.pdf')
       setExportPreviewMode(false)
     } catch (err) {
-      alert('Could not generate the PDF: ' + (err as Error).message)
+      alert('No se pudo generar el PDF: ' + (err as Error).message)
     } finally {
       controls.forEach(el => { el.style.visibility = '' })
       setExporting(false)
@@ -218,13 +265,13 @@ export default function Home() {
   })
 
   const layerMeta: { key: LayerKey; label: string; color: string; count: number }[] = [
-    { key: 'churches',     label: 'Churches',             color: '#2563eb', count: churches.filter(c => layerOf(c) === 'churches').length },
-    { key: 'distribution', label: 'Distribution centers', color: '#dc2626', count: churches.filter(c => layerOf(c) === 'distribution').length },
-    { key: 'hospital',     label: 'Field hospital',       color: '#7c8729', count: churches.filter(c => layerOf(c) === 'hospital').length },
+    { key: 'churches',     label: 'Iglesias',                color: '#2563eb', count: churches.filter(c => layerOf(c) === 'churches').length },
+    { key: 'distribution', label: 'Centros de distribución', color: '#dc2626', count: churches.filter(c => layerOf(c) === 'distribution').length },
+    { key: 'hospital',     label: 'Hospital de campaña',     color: '#7c8729', count: churches.filter(c => layerOf(c) === 'hospital').length },
   ]
   const activeLayers = (Object.keys(layers) as LayerKey[]).filter(k => layers[k]).length
 
-  const activeLayerLabels = layerMeta.filter(l => layers[l.key]).map(l => l.label).join(', ') || 'None'
+  const activeLayerLabels = layerMeta.filter(l => layers[l.key]).map(l => l.label).join(', ') || 'Ninguna'
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -233,18 +280,24 @@ export default function Home() {
         <div className="flex items-center gap-2.5">
           <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover border-2 border-white/20" />
           <div>
-            <h1 className="text-base font-bold leading-tight font-sans-pro">La Guaira Distribution Network</h1>
+            <h1 className="text-base font-bold leading-tight font-sans-pro">Red de Distribución La Guaira</h1>
             <p className="text-white/50 text-[11px] font-data uppercase tracking-wide">Samaritan&apos;s Purse</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${!online ? 'bg-red-500/20 text-red-200' : pending > 0 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/10 text-white/50'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${!online ? 'bg-red-400' : pending > 0 ? 'bg-amber-300' : 'bg-emerald-400'}`} />
+            <span className="hidden sm:inline">
+              {!online ? 'Sin conexión' : syncing ? 'Sincronizando…' : pending > 0 ? `${pending} cambio${pending !== 1 ? 's' : ''} pendiente${pending !== 1 ? 's' : ''}` : 'En línea'}
+            </span>
+          </div>
           <div className="text-right text-sm hidden sm:block">
-            <div className="text-white font-semibold font-data">{churchCount} churches</div>
-            <div className="text-white/50 text-xs font-data">{distCount} distribution centers</div>
+            <div className="text-white font-semibold font-data">{churchCount} iglesias</div>
+            <div className="text-white/50 text-xs font-data">{distCount} centros de distribución</div>
           </div>
           <button
             onClick={editMode ? () => setEditMode(false) : activateEditMode}
-            title={editMode ? 'Exit edit mode' : 'Enter edit mode'}
+            title={editMode ? 'Salir del modo edición' : 'Entrar en modo edición'}
             className={`p-2 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${editMode ? 'bg-olive text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
           >
             {editMode ? (
@@ -257,7 +310,7 @@ export default function Home() {
             href="/dashboard"
             className="bg-olive hover:bg-[var(--olive-600)] px-3.5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            Dashboard
+            Panel
           </Link>
         </div>
       </header>
@@ -268,7 +321,7 @@ export default function Home() {
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
             type="text"
-            placeholder="Search church or pastor..."
+            placeholder="Buscar iglesia o pastor..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="border border-gray-300 rounded-lg pl-8 pr-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -283,7 +336,7 @@ export default function Home() {
           onChange={e => setParish(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option>{ALL_OPTION}</option>
+          <option value={ALL_OPTION}>Todas las parroquias</option>
           {parishOptions.map(p => <option key={p}>{p}</option>)}
         </select>
 
@@ -296,7 +349,7 @@ export default function Home() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-500">
               <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84zM2 12l8.58 3.91a2 2 0 0 0 1.66 0L22 12M2 17l8.58 3.91a2 2 0 0 0 1.66 0L22 17" />
             </svg>
-            <span className="font-medium text-slate-700">Layers</span>
+            <span className="font-medium text-slate-700">Capas</span>
             <span className="font-data text-xs bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">{activeLayers}/3</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`w-3.5 h-3.5 text-slate-400 transition-transform ${layersOpen ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
@@ -305,7 +358,7 @@ export default function Home() {
             <>
               <div className="fixed inset-0 z-[1200]" onClick={() => setLayersOpen(false)} />
               <div className="absolute left-0 top-full mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-200 p-1.5 z-[1300]">
-                <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Show on map</div>
+                <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mostrar en el mapa</div>
                 {layerMeta.map(({ key, label, color, count }) => {
                   const on = layers[key]
                   return (
@@ -324,8 +377,8 @@ export default function Home() {
                   )
                 })}
                 <div className="flex gap-1 px-1.5 pt-1.5 mt-1 border-t border-slate-100">
-                  <button onClick={() => setLayers({ churches: true, distribution: true, hospital: true })} className="flex-1 text-xs py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">All</button>
-                  <button onClick={() => setLayers({ churches: false, distribution: false, hospital: false })} className="flex-1 text-xs py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">None</button>
+                  <button onClick={() => setLayers({ churches: true, distribution: true, hospital: true })} className="flex-1 text-xs py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">Todas</button>
+                  <button onClick={() => setLayers({ churches: false, distribution: false, hospital: false })} className="flex-1 text-xs py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">Ninguna</button>
                 </div>
               </div>
             </>
@@ -340,18 +393,18 @@ export default function Home() {
             className="w-4 h-4"
             style={{ accentColor: 'var(--olive)' }}
           />
-          <span className="text-slate-700">Show routes</span>
+          <span className="text-slate-700">Mostrar rutas</span>
         </label>
 
         <button
           onClick={handleStartExportPreview}
-          title="Preview and export the current map view as a PDF"
+          title="Vista previa y exportación del mapa actual en PDF"
           className="flex items-center gap-1.5 border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] transition-colors"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-500">
             <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
           </svg>
-          <span className="font-medium text-slate-700 hidden sm:inline">Export PDF</span>
+          <span className="font-medium text-slate-700 hidden sm:inline">Exportar PDF</span>
         </button>
 
         {editMode && (
@@ -360,7 +413,7 @@ export default function Home() {
             className="ml-auto flex items-center gap-1.5 bg-navy text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-[var(--navy-700)] transition-colors"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-            Add church
+            Agregar iglesia
           </button>
         )}
       </div>
@@ -369,15 +422,15 @@ export default function Home() {
       {exportPreviewMode && (
         <div className="bg-navy text-white px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 shadow-lg flex-shrink-0">
           <div className="min-w-0">
-            <div className="font-semibold text-xs sm:text-sm whitespace-nowrap">Export preview</div>
-            <div className="text-white/60 text-[11px] hidden sm:block">This is exactly what will be saved as a PDF. Pan or zoom the map, then click Download PDF.</div>
+            <div className="font-semibold text-xs sm:text-sm whitespace-nowrap">Vista previa de exportación</div>
+            <div className="text-white/60 text-[11px] hidden sm:block">Esto es exactamente lo que se guardará como PDF. Mueve o haz zoom en el mapa y luego haz clic en Descargar PDF.</div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={handleCancelExportPreview} disabled={exporting} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-50">
-              Cancel
+              Cancelar
             </button>
             <button onClick={handleConfirmExportPdf} disabled={exporting} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-olive hover:bg-[var(--olive-600)] transition-colors whitespace-nowrap disabled:opacity-50">
-              {exporting ? 'Generating…' : 'Download PDF'}
+              {exporting ? 'Generando…' : 'Descargar PDF'}
             </button>
           </div>
         </div>
@@ -388,12 +441,12 @@ export default function Home() {
         <div className={`items-center gap-2.5 px-3 py-2 border-b border-gray-200 flex-shrink-0 ${exportPreviewMode ? 'flex' : 'hidden'}`}>
           <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-8 h-8 rounded-full object-cover" />
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-bold leading-tight font-sans-pro text-navy">La Guaira Distribution Network</h1>
+            <h1 className="text-sm font-bold leading-tight font-sans-pro text-navy">Red de Distribución La Guaira</h1>
             <p className="text-gray-500 text-[10px] uppercase tracking-wide">Samaritan&apos;s Purse</p>
           </div>
           <div className="text-[10px] text-gray-500 text-right flex-shrink-0">
-            <div>Parish: {parish} · Layers: {activeLayerLabels} · Routes: {showRoutes ? 'On' : 'Off'}</div>
-            <div>Generated {exportTime}</div>
+            <div>Parroquia: {parish === ALL_OPTION ? 'Todas' : parish} · Capas: {activeLayerLabels} · Rutas: {showRoutes ? 'Sí' : 'No'}</div>
+            <div>Generado el {exportTime}</div>
           </div>
         </div>
 
@@ -403,19 +456,19 @@ export default function Home() {
         <div className="flex-1 relative">
           {loading ? (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-20">
-              <div className="text-gray-500 text-sm">Loading map...</div>
+              <div className="text-gray-500 text-sm">Cargando mapa...</div>
             </div>
           ) : (
             <>
               {settingLocationFor && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
-                  📍 Click on the map to pin: <strong>{settingLocationFor.name}</strong>
+                  📍 Haz clic en el mapa para ubicar: <strong>{settingLocationFor.name}</strong>
                   <button onClick={() => setSettingLocationFor(null)} className="ml-3 text-yellow-700 hover:text-yellow-900">✕</button>
                 </div>
               )}
               {pickingForForm && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
-                  📍 Tap the map to place the pin
+                  📍 Toca el mapa para colocar el pin
                   <button onClick={() => setPickingForForm(false)} className="ml-3 text-yellow-700 hover:text-yellow-900">✕</button>
                 </div>
               )}
@@ -453,31 +506,31 @@ export default function Home() {
           >
             <span className="w-10 h-1 rounded-full bg-gray-300" />
             <span className="text-xs font-semibold text-gray-600">
-              {selected ? selected.name : `${filtered.length} ${filtered.length !== 1 ? 'points' : 'point'} ${sheetOpen ? '▼' : '▲'}`}
+              {selected ? selected.name : `${filtered.length} ${filtered.length !== 1 ? 'puntos' : 'punto'} ${sheetOpen ? '▼' : '▲'}`}
             </span>
           </button>
 
           <div className="overflow-y-auto flex-1">
           {selected && selected.marker_type === 'hospital' ? (
             <div className="p-4">
-              <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Back to list</button>
+              <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Volver a la lista</button>
               {selected.image_url && (
                 <img src={selected.image_url} alt={selected.name}
                   onError={e => { e.currentTarget.style.display = 'none' }}
                   className="w-full h-44 object-cover rounded-xl mb-3 border border-slate-200" />
               )}
               <div className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-[#80873322] text-[#5f6526] mb-2">
-                🏥 Field Hospital
+                🏥 Hospital de Campaña
               </div>
               <h2 className="font-bold text-gray-900 text-base mb-1">{selected.name}</h2>
               <div className="space-y-2 text-sm mt-3">
                 <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parish</div>
+                  <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parroquia</div>
                   <div className="text-gray-800">{selected.parish}</div>
                 </div>
                 {selected.notes && (
                   <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">About</div>
+                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Acerca de</div>
                     <div className="text-gray-800">{selected.notes}</div>
                   </div>
                 )}
@@ -487,20 +540,20 @@ export default function Home() {
                     target="_blank" rel="noreferrer"
                     className="block text-center bg-[#808733] hover:bg-[#6b7029] text-white py-2 rounded-lg text-sm font-medium transition-colors"
                   >
-                    🧭 Open in Google Maps
+                    🧭 Abrir en Google Maps
                   </a>
                 )}
               </div>
               {editMode && (
                 <div className="flex gap-2 mt-4">
-                  <button onClick={() => openEditChurch(selected)} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Edit</button>
-                  <button onClick={() => setConfirmDeleteChurch(selected)} className="flex-1 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+                  <button onClick={() => openEditChurch(selected)} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Editar</button>
+                  <button onClick={() => setConfirmDeleteChurch(selected)} className="flex-1 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50">Eliminar</button>
                 </div>
               )}
             </div>
           ) : selected ? (
             <div className="p-4">
-              <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Back to list</button>
+              <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Volver a la lista</button>
               {selected.image_url && (
                 <img src={selected.image_url} alt={selected.name}
                   onError={e => { e.currentTarget.style.display = 'none' }}
@@ -508,71 +561,113 @@ export default function Home() {
               )}
               <div className="flex gap-2 flex-wrap mb-3">
                 <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${selected.is_distribution_center ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                  {selected.is_distribution_center ? '🔴 Distribution Center' : '🔵 Church'}
+                  {selected.is_distribution_center ? '🔴 Centro de Distribución' : '🔵 Iglesia'}
                 </div>
                 <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${selected.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                  {selected.geocode_status === 'validado' ? '📍 Location validated' : '⏳ Location pending'}
+                  {selected.geocode_status === 'validado' ? '📍 Ubicación validada' : '⏳ Ubicación pendiente'}
                 </div>
               </div>
               <h2 className="font-bold text-gray-900 text-base mb-1">{selected.name}</h2>
               {selected.pastor_name && <p className="text-gray-600 text-sm mb-3">👤 {selected.pastor_name}</p>}
               <div className="space-y-2 text-sm">
                 <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parish</div>
+                  <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parroquia</div>
                   <div className="text-gray-800">{selected.parish}</div>
                 </div>
                 {!selected.is_distribution_center && (
                   <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Distribution Center</div>
+                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Centro de Distribución</div>
                     {editMode ? (
                       <select
                         value={selected.distribution_center_id || ''}
                         onChange={e => reassignCenter(selected, e.target.value)}
                         className="w-full bg-white border border-gray-300 rounded-md px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       >
-                        <option value="">— Unassigned —</option>
+                        <option value="">— Sin asignar —</option>
                         {centers.map(c => (
                           <option key={c.id} value={c.id}>{c.name} ({c.parish})</option>
                         ))}
                       </select>
                     ) : (
-                      <div className="text-gray-800">{centers.find(c => c.id === selected.distribution_center_id)?.name || '— Unassigned —'}</div>
+                      <div className="text-gray-800">{centers.find(c => c.id === selected.distribution_center_id)?.name || '— Sin asignar —'}</div>
                     )}
                   </div>
                 )}
                 {selected.phone && (
                   <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Phone</div>
+                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Teléfono</div>
                     <a href={`tel:+58${selected.phone}`} className="text-blue-600 hover:underline">+58 {selected.phone}</a>
                     <a href={`https://wa.me/58${selected.phone}`} target="_blank" rel="noreferrer" className="ml-3 text-green-600 text-xs hover:underline">WhatsApp →</a>
                   </div>
                 )}
                 {selected.email && (
                   <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Email</div>
+                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Correo</div>
                     <a href={`mailto:${selected.email}`} className="text-blue-600 hover:underline break-all">{selected.email}</a>
                   </div>
                 )}
               </div>
+
+              {selected.is_distribution_center && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-gray-500 text-xs uppercase font-semibold">Registro de entregas</div>
+                    {editMode && (
+                      <button
+                        onClick={() => setDistributionFormOpen(true)}
+                        className="text-xs font-medium text-[var(--olive)] hover:underline"
+                      >
+                        + Registrar entrega
+                      </button>
+                    )}
+                  </div>
+                  {distributionsLoading ? (
+                    <div className="text-xs text-gray-400 py-2">Cargando…</div>
+                  ) : distributions.length === 0 ? (
+                    <div className="text-xs text-gray-400 py-2">Aún no hay entregas registradas en este centro.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {distributions.map(d => (
+                        <div key={d.id} className="bg-gray-50 rounded-lg p-3 text-sm">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="text-gray-800 font-medium">
+                              {new Date(d.distributed_at + 'T00:00:00').toLocaleDateString('es-VE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </div>
+                            {editMode && (
+                              <button onClick={() => setConfirmDeleteDistribution(d)} className="text-gray-300 hover:text-red-500 text-xs flex-shrink-0">✕</button>
+                            )}
+                          </div>
+                          <div className="text-gray-700 text-xs mt-1">{d.items}</div>
+                          {d.families_served != null && (
+                            <div className="text-gray-500 text-xs mt-1">👨‍👩‍👧‍👦 {d.families_served} familias atendidas</div>
+                          )}
+                          {d.notes && <div className="text-gray-400 text-xs mt-1">{d.notes}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {editMode && (
                 <>
                   <button
                     onClick={() => toggleDistribution(selected)}
                     className={`mt-4 w-full py-2 rounded-lg text-sm font-medium transition-colors ${selected.is_distribution_center ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-red-600 text-white hover:bg-red-700'}`}
                   >
-                    {selected.is_distribution_center ? 'Remove as distribution center' : '🔴 Mark as distribution center'}
+                    {selected.is_distribution_center ? 'Quitar como centro de distribución' : '🔴 Marcar como centro de distribución'}
                   </button>
                   {selected.geocode_status !== 'validado' && (
                     <button
                       onClick={() => setSettingLocationFor(selected)}
                       className="mt-2 w-full py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors"
                     >
-                      📍 Pin location manually on map
+                      📍 Ubicar manualmente en el mapa
                     </button>
                   )}
                   <div className="flex gap-2 mt-2">
-                    <button onClick={() => openEditChurch(selected)} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Edit</button>
-                    <button onClick={() => setConfirmDeleteChurch(selected)} className="flex-1 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+                    <button onClick={() => openEditChurch(selected)} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Editar</button>
+                    <button onClick={() => setConfirmDeleteChurch(selected)} className="flex-1 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50">Eliminar</button>
                   </div>
                 </>
               )}
@@ -580,7 +675,7 @@ export default function Home() {
           ) : (
             <div className="divide-y">
               <div className="p-3 text-xs text-gray-500 uppercase font-semibold bg-gray-50">
-                {filtered.length} {filtered.length !== 1 ? 'points' : 'point'}{search ? ` — "${search}"` : ''}
+                {filtered.length} {filtered.length !== 1 ? 'puntos' : 'punto'}{search ? ` — "${search}"` : ''}
               </div>
               {filtered.map(church => (
                 <button
@@ -613,20 +708,20 @@ export default function Home() {
       {passcodeModalOpen && (
         <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
           <form onSubmit={submitPasscode} className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
-            <h3 className="font-bold text-gray-900 mb-1">Edit mode</h3>
-            <p className="text-xs text-gray-500 mb-3">Enter the passcode to add, edit, or delete churches.</p>
+            <h3 className="font-bold text-gray-900 mb-1">Modo edición</h3>
+            <p className="text-xs text-gray-500 mb-3">Ingresa la clave para agregar, editar o eliminar iglesias.</p>
             <input
               type="password"
               autoFocus
               value={passcodeInput}
               onChange={e => { setPasscodeInput(e.target.value); setPasscodeError(false) }}
               className={`w-full border rounded-lg px-3 py-2 text-sm mb-1 focus:outline-none focus:ring-2 focus:ring-[var(--olive)] ${passcodeError ? 'border-red-400' : 'border-gray-300'}`}
-              placeholder="Passcode"
+              placeholder="Clave"
             />
-            {passcodeError && <p className="text-xs text-red-600 mb-2">Incorrect passcode</p>}
+            {passcodeError && <p className="text-xs text-red-600 mb-2">Clave incorrecta</p>}
             <div className="flex gap-2 mt-3">
-              <button type="button" onClick={() => { setPasscodeModalOpen(false); setPasscodeInput(''); setPasscodeError(false) }} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button type="submit" disabled={verifying} className="flex-1 py-2 rounded-lg bg-navy text-white text-sm font-medium hover:bg-[var(--navy-700)] disabled:opacity-50">{verifying ? 'Checking…' : 'Unlock'}</button>
+              <button type="button" onClick={() => { setPasscodeModalOpen(false); setPasscodeInput(''); setPasscodeError(false) }} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
+              <button type="submit" disabled={verifying} className="flex-1 py-2 rounded-lg bg-navy text-white text-sm font-medium hover:bg-[var(--navy-700)] disabled:opacity-50">{verifying ? 'Verificando…' : 'Desbloquear'}</button>
             </div>
           </form>
         </div>
@@ -636,11 +731,11 @@ export default function Home() {
       {confirmDeleteChurch && (
         <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
-            <h3 className="font-bold text-gray-900 mb-1">Delete church?</h3>
-            <p className="text-sm text-gray-600 mb-4">This will permanently remove <strong>{confirmDeleteChurch.name}</strong> and its routes from the map.</p>
+            <h3 className="font-bold text-gray-900 mb-1">¿Eliminar iglesia?</h3>
+            <p className="text-sm text-gray-600 mb-4">Esto eliminará permanentemente a <strong>{confirmDeleteChurch.name}</strong> y sus rutas del mapa.</p>
             <div className="flex gap-2">
-              <button onClick={() => setConfirmDeleteChurch(null)} disabled={deleting} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
-              <button onClick={handleDeleteConfirmed} disabled={deleting} className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50">{deleting ? 'Deleting…' : 'Delete'}</button>
+              <button onClick={() => setConfirmDeleteChurch(null)} disabled={deleting} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancelar</button>
+              <button onClick={handleDeleteConfirmed} disabled={deleting} className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50">{deleting ? 'Eliminando…' : 'Eliminar'}</button>
             </div>
           </div>
         </div>
@@ -659,6 +754,29 @@ export default function Home() {
           onCancelPickLocation={() => setPickingForForm(false)}
           pendingCoords={pickedCoords}
         />
+      )}
+
+      {/* Register a distribution event */}
+      {distributionFormOpen && selected && (
+        <DistributionForm
+          center={selected}
+          onClose={() => setDistributionFormOpen(false)}
+          onSaved={() => { setDistributionFormOpen(false); fetchDistributions(selected.id) }}
+        />
+      )}
+
+      {/* Delete distribution confirmation */}
+      {confirmDeleteDistribution && (
+        <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
+            <h3 className="font-bold text-gray-900 mb-1">¿Eliminar este registro?</h3>
+            <p className="text-sm text-gray-600 mb-4">Se eliminará permanentemente esta entrega del historial.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDeleteDistribution(null)} disabled={deletingDistribution} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancelar</button>
+              <button onClick={handleDeleteDistributionConfirmed} disabled={deletingDistribution} className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50">{deletingDistribution ? 'Eliminando…' : 'Eliminar'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

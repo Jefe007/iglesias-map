@@ -23,3 +23,13 @@ export type Church = {
   image_url: string | null
   created_at: string
 }
+
+export type Distribution = {
+  id: string
+  distribution_center_id: string
+  distributed_at: string
+  items: string
+  families_served: number | null
+  notes: string | null
+  created_at: string
+}
