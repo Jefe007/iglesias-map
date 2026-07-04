@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents, LayersControl } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -116,6 +117,33 @@ function MapReadyNotifier({ onReady }: { onReady?: (map: L.Map) => void }) {
   return null
 }
 
+// Temporary on-screen counter for diagnosing offline tile loading in the
+// field, where there's no way to attach devtools. Enabled with ?tiledebug=1.
+function TileDebugOverlay() {
+  const map = useMap()
+  const [stats, setStats] = useState({ ok: 0, error: 0, log: [] as string[] })
+
+  useEffect(() => {
+    const layers: L.TileLayer[] = []
+    map.eachLayer(layer => { if (layer instanceof L.TileLayer) layers.push(layer) })
+
+    const onLoad = () => setStats(s => ({ ...s, ok: s.ok + 1 }))
+    const onError = (e: L.TileErrorEvent) => {
+      const src = (e.tile as HTMLImageElement | undefined)?.src || '?'
+      setStats(s => ({ ...s, error: s.error + 1, log: [...s.log.slice(-3), src.replace(/^https:\/\/[a-z0-9.]+/, '')] }))
+    }
+    layers.forEach(l => { l.on('tileload', onLoad); l.on('tileerror', onError) })
+    return () => { layers.forEach(l => { l.off('tileload', onLoad); l.off('tileerror', onError) }) }
+  }, [map])
+
+  return (
+    <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[1000] bg-black/85 text-white text-[11px] font-mono px-3 py-2 rounded-lg max-w-[90vw]">
+      <div>tiles ok: {stats.ok} · error: {stats.error} · online: {String(typeof navigator !== 'undefined' && navigator.onLine)}</div>
+      {stats.log.map((l, i) => <div key={i} className="text-red-300 truncate">{l}</div>)}
+    </div>
+  )
+}
+
 // Detects active base layer and adds label overlay for hybrid mode
 function HybridLabelsManager() {
   const map = useMap()
@@ -186,6 +214,7 @@ interface Props {
 }
 
 export default function ChurchMap({ churches, allChurches, selected, focusChurch, onSelect, onSetLocation, settingLocationFor, showRoutes, pickingLocation, onPickLocation, onMapReady }: Props) {
+  const tileDebug = useSearchParams().get('tiledebug') === '1'
   const groups = groupByParish(churches)
 
   // Routes are computed over the full church set so the network stays complete
@@ -231,6 +260,7 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
       <HybridLabelsManager />
       <FlyToSelected church={focusChurch ?? selected} />
       <MapReadyNotifier onReady={onMapReady} />
+      {tileDebug && <TileDebugOverlay />}
 
       {settingLocationFor && onSetLocation && (
         <MapClickHandler onClick={(lat, lng) => onSetLocation(settingLocationFor, lat, lng)} />
