@@ -556,7 +556,7 @@ export default function Home() {
         <div className="flex flex-1 overflow-hidden relative">
         {/* Map */}
         <div className="flex-1 relative">
-          {loading ? (
+          {loading && allChurches.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-20">
               <div className="text-gray-500 text-sm">Cargando mapa...</div>
             </div>
