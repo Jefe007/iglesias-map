@@ -233,10 +233,15 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
     >
       <LayersControl position="topright">
         <LayersControl.BaseLayer checked name="Mapa">
+          {/* Bundled with the app deployment (see scripts/download-tiles.mjs) so the
+              base map is always available offline — not dependent on the browser
+              having successfully cached third-party tiles at runtime. Covers zooms
+              10-15 for La Guaira; maxNativeZoom upscales those for closer zooms
+              instead of showing blank tiles. */}
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxZoom={19} keepBuffer={4}
+            url="/tiles/{z}/{x}/{y}.png"
+            maxZoom={19} maxNativeZoom={15} keepBuffer={4}
           />
         </LayersControl.BaseLayer>
 
