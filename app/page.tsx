@@ -41,6 +41,9 @@ export default function Home() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [showRoutes, setShowRoutes] = useState(false)
   const mapRef = useRef<LeafletMap | null>(null)
+  const sheetRef = useRef<HTMLDivElement | null>(null)
+  const sheetDrag = useRef<{ startY: number; startOffset: number; dragging: boolean } | null>(null)
+  const suppressSheetClick = useRef(false)
 
   // Edit mode / passcode
   const [editMode, setEditMode] = useState(false)
@@ -314,18 +317,75 @@ export default function Home() {
 
   const activeLayerLabels = layerMeta.filter(l => layers[l.key]).map(l => l.label).join(', ') || 'Ninguna'
 
+  // Drag-to-open/close for the mobile bottom sheet. Only the "is this a real
+  // drag" case is handled here — a plain tap falls through to the button's
+  // onClick untouched, so keyboard/mouse activation keeps working exactly as
+  // before. 3.25rem below matches the handle height baked into the sheet's
+  // collapsed translate-y class.
+  const sheetClosedOffset = () => {
+    const el = sheetRef.current
+    return el ? el.getBoundingClientRect().height - 52 : 0
+  }
+  const handleSheetPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    sheetDrag.current = { startY: e.clientY, startOffset: sheetOpen || selected ? 0 : sheetClosedOffset(), dragging: false }
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* not all pointer types support capture; drag still works without it */ }
+  }
+  const handleSheetPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const state = sheetDrag.current
+    const el = sheetRef.current
+    if (!state || !el) return
+    const deltaY = e.clientY - state.startY
+    if (!state.dragging) {
+      if (Math.abs(deltaY) < 6) return
+      state.dragging = true
+      el.style.transitionProperty = 'none'
+    }
+    e.preventDefault()
+    const closedOffset = sheetClosedOffset()
+    const next = Math.min(Math.max(state.startOffset + deltaY, 0), closedOffset)
+    el.style.transform = `translateY(${next}px)`
+  }
+  const handleSheetPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const state = sheetDrag.current
+    const el = sheetRef.current
+    sheetDrag.current = null
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* no-op if it was never captured */ }
+    if (!state || !el || !state.dragging) return
+    el.style.transitionProperty = ''
+    el.style.transform = ''
+    suppressSheetClick.current = true
+    // Fixed thumb-distance thresholds rather than "past halfway": the sheet
+    // can be nearly full-screen when open, and requiring a drag across half
+    // of that would make closing it impractically far to swipe.
+    const deltaY = e.clientY - state.startY
+    const wasOpen = state.startOffset === 0
+    const shouldOpen = wasOpen ? deltaY < 100 : deltaY < -60
+    setSheetOpen(shouldOpen)
+    if (!shouldOpen && selected) setSelected(null)
+  }
+  const handleSheetPointerCancel = () => {
+    sheetDrag.current = null
+    const el = sheetRef.current
+    if (el) { el.style.transitionProperty = ''; el.style.transform = '' }
+  }
+  const handleSheetClick = () => {
+    if (suppressSheetClick.current) { suppressSheetClick.current = false; return }
+    setSheetOpen(o => !o)
+    if (selected) setSelected(null)
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
       <header className={`bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10 ${exportPreviewMode ? 'hidden' : ''}`}>
-        <div className="flex items-center gap-2.5">
-          <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover border-2 border-white/20" />
-          <div>
-            <h1 className="text-base font-bold leading-tight font-sans-pro">Red de Distribución La Guaira</h1>
-            <p className="text-white/50 text-[11px] font-data uppercase tracking-wide">Samaritan&apos;s Purse</p>
+        <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
+          <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover border-2 border-white/20 flex-shrink-0" />
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-base font-bold leading-tight font-sans-pro truncate">Red de Distribución La Guaira</h1>
+            <p className="text-white/50 text-[11px] font-data uppercase tracking-wide truncate">Samaritan&apos;s Purse</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-shrink-0">
           <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${!online ? 'bg-red-500/20 text-red-200' : pending > 0 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/10 text-white/50'}`}>
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${!online ? 'bg-red-400' : pending > 0 ? 'bg-amber-300' : 'bg-emerald-400'}`} />
             <span className="hidden sm:inline">
@@ -534,6 +594,7 @@ export default function Home() {
 
         {/* Sidebar (desktop) / bottom sheet (mobile) */}
         <div
+          ref={sheetRef}
           className={`
             bg-white flex flex-col overflow-hidden print:hidden
             md:static md:w-72 md:border-l md:shadow-none md:rounded-none md:max-h-none md:translate-y-0
@@ -543,10 +604,14 @@ export default function Home() {
             ${sheetOpen || selected ? 'translate-y-0' : 'translate-y-[calc(100%-3.25rem)]'}
           `}
         >
-          {/* Mobile handle */}
+          {/* Mobile handle — tap toggles (onClick), drag follows the finger and snaps open/closed */}
           <button
-            onClick={() => { setSheetOpen(o => !o); if (selected) setSelected(null) }}
-            className="md:hidden flex flex-col items-center gap-1 py-2 border-b border-gray-100 active:bg-gray-50"
+            onClick={handleSheetClick}
+            onPointerDown={handleSheetPointerDown}
+            onPointerMove={handleSheetPointerMove}
+            onPointerUp={handleSheetPointerUp}
+            onPointerCancel={handleSheetPointerCancel}
+            className="md:hidden flex flex-col items-center gap-1 py-2 border-b border-gray-100 active:bg-gray-50 touch-none select-none"
           >
             <span className="w-10 h-1 rounded-full bg-gray-300" />
             <span className="text-xs font-semibold text-gray-600">

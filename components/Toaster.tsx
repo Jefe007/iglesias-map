@@ -12,7 +12,7 @@ export default function Toaster() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-4 sm:translate-x-0 z-[2000] flex flex-col gap-2 w-[calc(100%-2rem)] sm:w-80">
+    <div className="fixed bottom-20 md:bottom-4 left-1/2 -translate-x-1/2 md:left-auto md:right-4 md:translate-x-0 z-[2000] flex flex-col gap-2 w-[calc(100%-2rem)] md:w-80">
       {toasts.map(t => (
         <div
           key={t.id}

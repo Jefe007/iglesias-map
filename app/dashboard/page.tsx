@@ -106,17 +106,17 @@ export default function Dashboard() {
     <div className="min-h-dvh bg-[#F8FAFC] font-sans-pro text-slate-800">
       {/* Header */}
       <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-10 h-10 rounded-full object-cover border border-slate-200" />
-            <div>
-              <h1 className="text-base font-bold tracking-tight leading-none text-navy">Red de Distribución La Guaira</h1>
-              <p className="text-slate-400 text-xs mt-1 font-data">SAMARITAN&apos;S PURSE · PANEL</p>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-10 h-10 rounded-full object-cover border border-slate-200 flex-shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-base font-bold tracking-tight leading-none text-navy truncate">Red de Distribución La Guaira</h1>
+              <p className="text-slate-400 text-xs mt-1 font-data truncate">SAMARITAN&apos;S PURSE · PANEL</p>
             </div>
           </div>
           <Link
             href="/"
-            className="inline-flex items-center gap-2 bg-navy hover:bg-[var(--navy-700)] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] focus-visible:ring-offset-2"
+            className="inline-flex items-center gap-2 bg-navy hover:bg-[var(--navy-700)] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] focus-visible:ring-offset-2 flex-shrink-0"
           >
             {Icon.map} Abrir Mapa
           </Link>
