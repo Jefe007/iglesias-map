@@ -51,7 +51,7 @@ export default function DistributionForm({ center, onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-[1450] flex items-end md:items-center md:justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={!saving ? onClose : undefined} />
-      <div ref={modalRef} className="relative bg-white w-full md:w-[420px] max-h-[88vh] rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div ref={modalRef} className="relative bg-white w-full md:w-[420px] max-h-[88dvh] rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         <div className="bg-navy text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
           <div>
             <h2 className="font-bold font-sans-pro">Registrar entrega</h2>

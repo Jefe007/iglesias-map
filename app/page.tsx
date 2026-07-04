@@ -375,7 +375,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-dvh bg-gray-50">
       {/* Header */}
       <header className={`bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10 ${exportPreviewMode ? 'hidden' : ''}`}>
         <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
@@ -598,7 +598,7 @@ export default function Home() {
           className={`
             bg-white flex flex-col overflow-hidden print:hidden
             md:static md:w-72 md:border-l md:shadow-none md:rounded-none md:max-h-none md:translate-y-0
-            fixed inset-x-0 bottom-0 z-[1100] rounded-t-2xl shadow-2xl max-h-[78vh]
+            fixed inset-x-0 bottom-0 z-[1100] rounded-t-2xl shadow-2xl max-h-[78dvh]
             transition-transform duration-300 ease-out
             ${exportPreviewMode ? 'hidden' : ''}
             ${sheetOpen || selected ? 'translate-y-0' : 'translate-y-[calc(100%-3.25rem)]'}

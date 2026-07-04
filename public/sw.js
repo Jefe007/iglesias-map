@@ -94,10 +94,22 @@ async function trimCache(cacheName, maxItems) {
   }
 }
 
+// "Offline" is rarely a clean instant rejection on mobile — a dropped wifi
+// connection often leaves in-flight requests hanging for many seconds (DNS/
+// connect timeouts) before the browser gives up. Race the network against a
+// short timer so a shaky connection falls back to cache quickly instead of
+// leaving the page stuck on a blank/loading screen.
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms)
+    promise.then(v => { clearTimeout(timer); resolve(v) }, e => { clearTimeout(timer); reject(e) })
+  })
+}
+
 async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName)
   try {
-    const response = await fetch(request)
+    const response = await withTimeout(fetch(request), 4000)
     if (response && response.ok) cache.put(request, response.clone())
     return response
   } catch (err) {
@@ -121,7 +133,7 @@ async function cacheFirst(request, cacheName, { trim, cacheKey } = {}) {
       .catch(() => {})
     return cached
   }
-  const response = await fetch(request)
+  const response = await withTimeout(fetch(request), 4000)
   if (response && response.ok) {
     await cache.put(key, response.clone())
     if (trim) trimCache(cacheName, trim)

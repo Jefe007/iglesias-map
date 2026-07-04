@@ -148,7 +148,7 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
   return (
     <div className="fixed inset-0 z-[1400] flex items-end md:items-stretch md:justify-end">
       <div className="absolute inset-0 bg-black/40" onClick={!saving ? onClose : undefined} />
-      <div ref={modalRef} className="relative bg-white w-full md:w-[420px] max-h-[88vh] md:max-h-none md:h-full rounded-t-2xl md:rounded-none shadow-2xl flex flex-col overflow-hidden">
+      <div ref={modalRef} className="relative bg-white w-full md:w-[420px] max-h-[88dvh] md:max-h-none md:h-full rounded-t-2xl md:rounded-none shadow-2xl flex flex-col overflow-hidden">
         <div className="bg-navy text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
           <h2 className="font-bold font-sans-pro">{church ? 'Editar iglesia' : 'Agregar iglesia'}</h2>
           <button onClick={onClose} disabled={saving} aria-label="Cerrar" className="text-white/70 hover:text-white"><IconX className="w-4 h-4" /></button>
