@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Church } from '@/lib/supabase'
 import { createChurch, updateChurch, uploadPhoto } from '@/lib/api'
+import { IconX, IconMapPin } from '@/lib/icons'
+import { useFocusTrap } from '@/lib/useFocusTrap'
 
 type FormState = {
   name: string
@@ -77,6 +79,9 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const handleEscape = useCallback(() => { if (!saving) onClose() }, [saving, onClose])
+  const modalRef = useFocusTrap<HTMLDivElement>(handleEscape)
+
   useEffect(() => {
     if (pendingCoords) {
       setForm(f => ({ ...f, lat: String(pendingCoords.lat), lng: String(pendingCoords.lng) }))
@@ -143,15 +148,15 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
   return (
     <div className="fixed inset-0 z-[1400] flex items-end md:items-stretch md:justify-end">
       <div className="absolute inset-0 bg-black/40" onClick={!saving ? onClose : undefined} />
-      <div className="relative bg-white w-full md:w-[420px] max-h-[88vh] md:max-h-none md:h-full rounded-t-2xl md:rounded-none shadow-2xl flex flex-col overflow-hidden">
+      <div ref={modalRef} className="relative bg-white w-full md:w-[420px] max-h-[88vh] md:max-h-none md:h-full rounded-t-2xl md:rounded-none shadow-2xl flex flex-col overflow-hidden">
         <div className="bg-navy text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
           <h2 className="font-bold font-sans-pro">{church ? 'Editar iglesia' : 'Agregar iglesia'}</h2>
-          <button onClick={onClose} disabled={saving} className="text-white/70 hover:text-white text-lg leading-none">✕</button>
+          <button onClick={onClose} disabled={saving} aria-label="Cerrar" className="text-white/70 hover:text-white"><IconX className="w-4 h-4" /></button>
         </div>
 
         {pickingLocation ? (
           <div className="p-5 flex items-center justify-between gap-3">
-            <div className="text-sm text-slate-600">📍 Toca el mapa para colocar el pin.</div>
+            <div className="flex items-center gap-1.5 text-sm text-slate-600"><IconMapPin className="w-4 h-4 flex-shrink-0" /> Toca el mapa para colocar el pin.</div>
             <button onClick={onCancelPickLocation} className="text-xs font-medium text-slate-500 hover:text-slate-800 whitespace-nowrap">Cancelar</button>
           </div>
         ) : (
@@ -233,8 +238,8 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
                     placeholder="Lng" className={inputClass}
                   />
                 </div>
-                <button type="button" onClick={onStartPickLocation} className="mt-2 w-full py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors">
-                  📍 Elegir en el mapa
+                <button type="button" onClick={onStartPickLocation} className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors">
+                  <IconMapPin className="w-4 h-4" /> Elegir en el mapa
                 </button>
               </Field>
 

@@ -8,6 +8,10 @@ import { supabase, Church, Distribution } from '@/lib/supabase'
 import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStoredPasscode, deleteDistribution } from '@/lib/api'
 import { getChurches as getChurchesOffline, getDistributionsForCenter } from '@/lib/offlineStore'
 import { useOfflineStatus } from '@/lib/useOfflineStatus'
+import { showToast } from '@/lib/toast'
+import { IconSearch, IconX, IconMapPin, IconHospital, IconCompass, IconUser, IconUsers, IconClock } from '@/lib/icons'
+import MapLegend from '@/components/MapLegend'
+import { useFocusTrap } from '@/lib/useFocusTrap'
 
 const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false })
 const ChurchForm = dynamic(() => import('@/components/ChurchForm'), { ssr: false })
@@ -81,6 +85,15 @@ export default function Home() {
     wasSyncing.current = syncing
   }, [syncing, fetchChurches])
 
+  const hadPending = useRef(false)
+  useEffect(() => {
+    if (pending > 0) hadPending.current = true
+    else if (hadPending.current) {
+      showToast('Sincronización completa')
+      hadPending.current = false
+    }
+  }, [pending])
+
   const fetchDistributions = useCallback(async (centerId: string) => {
     setDistributionsLoading(true)
     const { data } = await getDistributionsForCenter(centerId)
@@ -103,8 +116,9 @@ export default function Home() {
       await deleteDistribution(confirmDeleteDistribution.id)
       setConfirmDeleteDistribution(null)
       if (selected) fetchDistributions(selected.id)
+      showToast('Entrega eliminada')
     } catch (e) {
-      alert((e as Error).message)
+      showToast((e as Error).message, 'error')
     } finally {
       setDeletingDistribution(false)
     }
@@ -116,9 +130,18 @@ export default function Home() {
   const exportAreaRef = useRef<HTMLDivElement | null>(null)
 
   // Re-fit the map whenever the chrome (header/filters/sidebar) is hidden or shown,
-  // since hiding it changes the map container's available size.
+  // since hiding it changes the map container's available size. Leaflet's own
+  // re-pan on invalidateSize() can misfire when the container jumps size (e.g.
+  // right after a high-zoom flyTo), so pin the view back explicitly afterward.
   useEffect(() => {
-    const id = requestAnimationFrame(() => mapRef.current?.invalidateSize())
+    const map = mapRef.current
+    if (!map) return
+    const center = map.getCenter()
+    const zoom = map.getZoom()
+    const id = requestAnimationFrame(() => {
+      map.invalidateSize()
+      map.setView(center, zoom, { animate: false })
+    })
     return () => cancelAnimationFrame(id)
   }, [exportPreviewMode])
 
@@ -150,8 +173,9 @@ export default function Home() {
       pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height)
       pdf.save('la-guaira-distribution-map.pdf')
       setExportPreviewMode(false)
+      showToast('PDF descargado')
     } catch (err) {
-      alert('No se pudo generar el PDF: ' + (err as Error).message)
+      showToast('No se pudo generar el PDF: ' + (err as Error).message, 'error')
     } finally {
       controls.forEach(el => { el.style.visibility = '' })
       setExporting(false)
@@ -164,8 +188,9 @@ export default function Home() {
       setSettingLocationFor(null)
       fetchChurches()
       setSelected(prev => prev?.id === church.id ? { ...prev, lat, lng, geocode_status: 'validado' } : prev)
+      showToast('Ubicación guardada')
     } catch (e) {
-      alert((e as Error).message)
+      showToast((e as Error).message, 'error')
     }
   }
 
@@ -180,7 +205,7 @@ export default function Home() {
       fetchChurches()
       setSelected(prev => prev?.id === church.id ? { ...prev, distribution_center_id: centerId || null } : prev)
     } catch (e) {
-      alert((e as Error).message)
+      showToast((e as Error).message, 'error')
     }
   }
 
@@ -190,7 +215,7 @@ export default function Home() {
       fetchChurches()
       setSelected(prev => prev?.id === church.id ? { ...prev, is_distribution_center: !prev.is_distribution_center } : prev)
     } catch (e) {
-      alert((e as Error).message)
+      showToast((e as Error).message, 'error')
     }
   }
 
@@ -246,12 +271,24 @@ export default function Home() {
       setConfirmDeleteChurch(null)
       setSelected(null)
       fetchChurches()
+      showToast('Iglesia eliminada')
     } catch (e) {
-      alert((e as Error).message)
+      showToast((e as Error).message, 'error')
     } finally {
       setDeleting(false)
     }
   }
+
+  const closePasscodeModal = useCallback(() => {
+    setPasscodeModalOpen(false); setPasscodeInput(''); setPasscodeError(false)
+  }, [])
+  const passcodeModalRef = useFocusTrap<HTMLFormElement>(closePasscodeModal)
+
+  const cancelDeleteChurch = useCallback(() => { if (!deleting) setConfirmDeleteChurch(null) }, [deleting])
+  const confirmDeleteChurchRef = useFocusTrap<HTMLDivElement>(cancelDeleteChurch)
+
+  const cancelDeleteDistribution = useCallback(() => { if (!deletingDistribution) setConfirmDeleteDistribution(null) }, [deletingDistribution])
+  const confirmDeleteDistributionRef = useFocusTrap<HTMLDivElement>(cancelDeleteDistribution)
 
   const distCount = churches.filter(c => c.is_distribution_center).length
   const churchCount = churches.filter(c => c.marker_type !== 'hospital').length
@@ -263,6 +300,10 @@ export default function Home() {
     }
     return true
   })
+
+  // While searching (and nothing is explicitly selected), fly the map to the
+  // top match without opening its detail panel, so results stay browsable.
+  const focusChurch = selected ?? (search.trim() && filtered.length ? filtered[0] : null)
 
   const layerMeta: { key: LayerKey; label: string; color: string; count: number }[] = [
     { key: 'churches',     label: 'Iglesias',                color: '#2563eb', count: churches.filter(c => layerOf(c) === 'churches').length },
@@ -298,6 +339,7 @@ export default function Home() {
           <button
             onClick={editMode ? () => setEditMode(false) : activateEditMode}
             title={editMode ? 'Salir del modo edición' : 'Entrar en modo edición'}
+            aria-label={editMode ? 'Salir del modo edición' : 'Entrar en modo edición'}
             className={`p-2 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${editMode ? 'bg-olive text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
           >
             {editMode ? (
@@ -318,7 +360,7 @@ export default function Home() {
       {/* Filters */}
       <div className={`bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm relative z-[1100] ${exportPreviewMode ? 'hidden' : ''}`}>
         <div className="relative">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"><IconSearch className="w-3.5 h-3.5" /></span>
           <input
             type="text"
             placeholder="Buscar iglesia o pastor..."
@@ -327,7 +369,7 @@ export default function Home() {
             className="border border-gray-300 rounded-lg pl-8 pr-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
+            <button onClick={() => setSearch('')} aria-label="Limpiar búsqueda" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><IconX className="w-3 h-3" /></button>
           )}
         </div>
 
@@ -461,21 +503,22 @@ export default function Home() {
           ) : (
             <>
               {settingLocationFor && (
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
-                  📍 Haz clic en el mapa para ubicar: <strong>{settingLocationFor.name}</strong>
-                  <button onClick={() => setSettingLocationFor(null)} className="ml-3 text-yellow-700 hover:text-yellow-900">✕</button>
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-1.5 bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
+                  <IconMapPin className="w-4 h-4 flex-shrink-0" /> Haz clic en el mapa para ubicar: <strong>{settingLocationFor.name}</strong>
+                  <button onClick={() => setSettingLocationFor(null)} aria-label="Cancelar" className="ml-1 text-yellow-700 hover:text-yellow-900"><IconX className="w-3.5 h-3.5" /></button>
                 </div>
               )}
               {pickingForForm && (
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
-                  📍 Toca el mapa para colocar el pin
-                  <button onClick={() => setPickingForForm(false)} className="ml-3 text-yellow-700 hover:text-yellow-900">✕</button>
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-1.5 bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
+                  <IconMapPin className="w-4 h-4 flex-shrink-0" /> Toca el mapa para colocar el pin
+                  <button onClick={() => setPickingForForm(false)} aria-label="Cancelar" className="ml-1 text-yellow-700 hover:text-yellow-900"><IconX className="w-3.5 h-3.5" /></button>
                 </div>
               )}
               <ChurchMap
                 churches={filtered}
                 allChurches={churches}
                 selected={selected}
+                focusChurch={focusChurch}
                 onSelect={openChurch}
                 onSetLocation={handleSetLocation}
                 settingLocationFor={settingLocationFor}
@@ -484,6 +527,7 @@ export default function Home() {
                 onPickLocation={(lat, lng) => { setPickedCoords({ lat, lng }); setPickingForForm(false) }}
                 onMapReady={map => { mapRef.current = map }}
               />
+              <MapLegend />
             </>
           )}
         </div>
@@ -519,8 +563,8 @@ export default function Home() {
                   onError={e => { e.currentTarget.style.display = 'none' }}
                   className="w-full h-44 object-cover rounded-xl mb-3 border border-slate-200" />
               )}
-              <div className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-[#80873322] text-[#5f6526] mb-2">
-                🏥 Hospital de Campaña
+              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#80873322] text-[#5f6526] mb-2">
+                <IconHospital className="w-3.5 h-3.5" /> Hospital de Campaña
               </div>
               <h2 className="font-bold text-gray-900 text-base mb-1">{selected.name}</h2>
               <div className="space-y-2 text-sm mt-3">
@@ -538,9 +582,9 @@ export default function Home() {
                   <a
                     href={`https://www.google.com/maps/search/?api=1&query=${selected.lat},${selected.lng}`}
                     target="_blank" rel="noreferrer"
-                    className="block text-center bg-[#808733] hover:bg-[#6b7029] text-white py-2 rounded-lg text-sm font-medium transition-colors"
+                    className="flex items-center justify-center gap-1.5 bg-[#808733] hover:bg-[#6b7029] text-white py-2 rounded-lg text-sm font-medium transition-colors"
                   >
-                    🧭 Abrir en Google Maps
+                    <IconCompass className="w-4 h-4" /> Abrir en Google Maps
                   </a>
                 )}
               </div>
@@ -560,15 +604,17 @@ export default function Home() {
                   className="w-full h-40 object-cover rounded-xl mb-3 border border-slate-200" />
               )}
               <div className="flex gap-2 flex-wrap mb-3">
-                <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${selected.is_distribution_center ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                  {selected.is_distribution_center ? '🔴 Centro de Distribución' : '🔵 Iglesia'}
+                <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${selected.is_distribution_center ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${selected.is_distribution_center ? 'bg-red-600' : 'bg-blue-600'}`} />
+                  {selected.is_distribution_center ? 'Centro de Distribución' : 'Iglesia'}
                 </div>
-                <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${selected.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                  {selected.geocode_status === 'validado' ? '📍 Ubicación validada' : '⏳ Ubicación pendiente'}
+                <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${selected.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                  {selected.geocode_status === 'validado' ? <IconMapPin className="w-3 h-3" /> : <IconClock className="w-3 h-3" />}
+                  {selected.geocode_status === 'validado' ? 'Ubicación validada' : 'Ubicación pendiente'}
                 </div>
               </div>
               <h2 className="font-bold text-gray-900 text-base mb-1">{selected.name}</h2>
-              {selected.pastor_name && <p className="text-gray-600 text-sm mb-3">👤 {selected.pastor_name}</p>}
+              {selected.pastor_name && <p className="flex items-center gap-1.5 text-gray-600 text-sm mb-3"><IconUser className="w-3.5 h-3.5" /> {selected.pastor_name}</p>}
               <div className="space-y-2 text-sm">
                 <div className="bg-gray-50 rounded-lg p-3">
                   <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parroquia</div>
@@ -634,12 +680,12 @@ export default function Home() {
                               {new Date(d.distributed_at + 'T00:00:00').toLocaleDateString('es-VE', { day: 'numeric', month: 'short', year: 'numeric' })}
                             </div>
                             {editMode && (
-                              <button onClick={() => setConfirmDeleteDistribution(d)} className="text-gray-300 hover:text-red-500 text-xs flex-shrink-0">✕</button>
+                              <button onClick={() => setConfirmDeleteDistribution(d)} aria-label="Eliminar registro" className="text-gray-300 hover:text-red-500 flex-shrink-0"><IconX className="w-3.5 h-3.5" /></button>
                             )}
                           </div>
                           <div className="text-gray-700 text-xs mt-1">{d.items}</div>
                           {d.families_served != null && (
-                            <div className="text-gray-500 text-xs mt-1">👨‍👩‍👧‍👦 {d.families_served} familias atendidas</div>
+                            <div className="flex items-center gap-1 text-gray-500 text-xs mt-1"><IconUsers className="w-3.5 h-3.5" /> {d.families_served} familias atendidas</div>
                           )}
                           {d.notes && <div className="text-gray-400 text-xs mt-1">{d.notes}</div>}
                         </div>
@@ -655,14 +701,14 @@ export default function Home() {
                     onClick={() => toggleDistribution(selected)}
                     className={`mt-4 w-full py-2 rounded-lg text-sm font-medium transition-colors ${selected.is_distribution_center ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-red-600 text-white hover:bg-red-700'}`}
                   >
-                    {selected.is_distribution_center ? 'Quitar como centro de distribución' : '🔴 Marcar como centro de distribución'}
+                    {selected.is_distribution_center ? 'Quitar como centro de distribución' : 'Marcar como centro de distribución'}
                   </button>
                   {selected.geocode_status !== 'validado' && (
                     <button
                       onClick={() => setSettingLocationFor(selected)}
-                      className="mt-2 w-full py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors"
+                      className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors"
                     >
-                      📍 Ubicar manualmente en el mapa
+                      <IconMapPin className="w-4 h-4" /> Ubicar manualmente en el mapa
                     </button>
                   )}
                   <div className="flex gap-2 mt-2">
@@ -684,8 +730,12 @@ export default function Home() {
                   className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors"
                 >
                   <div className="flex items-start gap-2">
-                    <span className="text-base mt-0.5">
-                      {church.marker_type === 'hospital' ? '🏥' : church.is_distribution_center ? '🔴' : '🔵'}
+                    <span className="mt-1.5 flex-shrink-0">
+                      {church.marker_type === 'hospital' ? (
+                        <IconHospital className="w-3.5 h-3.5 text-[#808733]" />
+                      ) : (
+                        <span className={`block w-2 h-2 rounded-full ${church.is_distribution_center ? 'bg-red-600' : 'bg-blue-600'}`} />
+                      )}
                     </span>
                     <div>
                       <div className="text-sm font-medium text-gray-900 leading-tight">{church.name}</div>
@@ -707,7 +757,7 @@ export default function Home() {
       {/* Passcode modal */}
       {passcodeModalOpen && (
         <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
-          <form onSubmit={submitPasscode} className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
+          <form ref={passcodeModalRef} onSubmit={submitPasscode} className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
             <h3 className="font-bold text-gray-900 mb-1">Modo edición</h3>
             <p className="text-xs text-gray-500 mb-3">Ingresa la clave para agregar, editar o eliminar iglesias.</p>
             <input
@@ -730,7 +780,7 @@ export default function Home() {
       {/* Delete confirmation */}
       {confirmDeleteChurch && (
         <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
+          <div ref={confirmDeleteChurchRef} className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
             <h3 className="font-bold text-gray-900 mb-1">¿Eliminar iglesia?</h3>
             <p className="text-sm text-gray-600 mb-4">Esto eliminará permanentemente a <strong>{confirmDeleteChurch.name}</strong> y sus rutas del mapa.</p>
             <div className="flex gap-2">
@@ -748,7 +798,10 @@ export default function Home() {
           centers={centers}
           parishes={parishOptions}
           onClose={closeForm}
-          onSaved={() => { setFormOpen(false); setFormChurch(null); setPickingForForm(false); setPickedCoords(null); fetchChurches() }}
+          onSaved={() => {
+            showToast(formChurch ? 'Iglesia actualizada' : 'Iglesia creada')
+            setFormOpen(false); setFormChurch(null); setPickingForForm(false); setPickedCoords(null); fetchChurches()
+          }}
           pickingLocation={pickingForForm}
           onStartPickLocation={() => { setSettingLocationFor(null); setPickingForForm(true) }}
           onCancelPickLocation={() => setPickingForForm(false)}
@@ -761,14 +814,14 @@ export default function Home() {
         <DistributionForm
           center={selected}
           onClose={() => setDistributionFormOpen(false)}
-          onSaved={() => { setDistributionFormOpen(false); fetchDistributions(selected.id) }}
+          onSaved={() => { showToast('Entrega registrada'); setDistributionFormOpen(false); fetchDistributions(selected.id) }}
         />
       )}
 
       {/* Delete distribution confirmation */}
       {confirmDeleteDistribution && (
         <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
+          <div ref={confirmDeleteDistributionRef} className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
             <h3 className="font-bold text-gray-900 mb-1">¿Eliminar este registro?</h3>
             <p className="text-sm text-gray-600 mb-4">Se eliminará permanentemente esta entrega del historial.</p>
             <div className="flex gap-2">

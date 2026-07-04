@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { Church } from '@/lib/supabase'
 import { createDistribution } from '@/lib/api'
+import { IconX } from '@/lib/icons'
+import { useFocusTrap } from '@/lib/useFocusTrap'
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
@@ -21,6 +23,9 @@ export default function DistributionForm({ center, onClose, onSaved }: Props) {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const handleEscape = useCallback(() => { if (!saving) onClose() }, [saving, onClose])
+  const modalRef = useFocusTrap<HTMLDivElement>(handleEscape)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -46,13 +51,13 @@ export default function DistributionForm({ center, onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-[1450] flex items-end md:items-center md:justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={!saving ? onClose : undefined} />
-      <div className="relative bg-white w-full md:w-[420px] max-h-[88vh] rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div ref={modalRef} className="relative bg-white w-full md:w-[420px] max-h-[88vh] rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         <div className="bg-navy text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
           <div>
             <h2 className="font-bold font-sans-pro">Registrar entrega</h2>
             <p className="text-white/60 text-xs mt-0.5">{center.name}</p>
           </div>
-          <button onClick={onClose} disabled={saving} className="text-white/70 hover:text-white text-lg leading-none">✕</button>
+          <button onClick={onClose} disabled={saving} aria-label="Cerrar" className="text-white/70 hover:text-white"><IconX className="w-4 h-4" /></button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">

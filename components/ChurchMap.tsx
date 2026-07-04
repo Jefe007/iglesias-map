@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents,
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Church } from '@/lib/supabase'
+import { IconHospital, IconMapPin, IconUser, IconMessageCircle, IconCheck, IconClock } from '@/lib/icons'
 
 delete (L.Icon.Default.prototype as any)._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -174,6 +175,7 @@ interface Props {
   churches: Church[]
   allChurches?: Church[]
   selected: Church | null
+  focusChurch?: Church | null
   onSelect: (church: Church) => void
   onSetLocation?: (church: Church, lat: number, lng: number) => void
   settingLocationFor?: Church | null
@@ -183,7 +185,7 @@ interface Props {
   onMapReady?: (map: L.Map) => void
 }
 
-export default function ChurchMap({ churches, allChurches, selected, onSelect, onSetLocation, settingLocationFor, showRoutes, pickingLocation, onPickLocation, onMapReady }: Props) {
+export default function ChurchMap({ churches, allChurches, selected, focusChurch, onSelect, onSetLocation, settingLocationFor, showRoutes, pickingLocation, onPickLocation, onMapReady }: Props) {
   const groups = groupByParish(churches)
 
   // Routes are computed over the full church set so the network stays complete
@@ -227,7 +229,7 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
       </LayersControl>
 
       <HybridLabelsManager />
-      <FlyToSelected church={selected} />
+      <FlyToSelected church={focusChurch ?? selected} />
       <MapReadyNotifier onReady={onMapReady} />
 
       {settingLocationFor && onSetLocation && (
@@ -275,26 +277,29 @@ export default function ChurchMap({ churches, allChurches, selected, onSelect, o
                   )}
                   {church.marker_type === 'hospital' ? (
                     <>
-                      <div className="text-[#808733] text-xs font-bold mb-0.5">🏥 Hospital de Campaña</div>
+                      <div className="flex items-center gap-1 text-[#808733] text-xs font-bold mb-0.5"><IconHospital className="w-3.5 h-3.5" /> Hospital de Campaña</div>
                       <div className="font-bold text-sm leading-tight">{church.name}</div>
-                      <div className="text-gray-500 text-xs mt-0.5">📍 {church.parish}</div>
+                      <div className="flex items-center gap-1 text-gray-500 text-xs mt-0.5"><IconMapPin className="w-3 h-3" /> {church.parish}</div>
                     </>
                   ) : (
                     <>
                       {church.is_distribution_center && (
-                        <div className="text-red-600 text-xs font-bold mb-1">🔴 Centro de Distribución</div>
+                        <div className="flex items-center gap-1.5 text-red-600 text-xs font-bold mb-1">
+                          <span className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" /> Centro de Distribución
+                        </div>
                       )}
                       <div className="font-bold text-sm leading-tight">{church.name}</div>
-                      {church.pastor_name && <div className="text-gray-600 text-xs mt-1">👤 {church.pastor_name}</div>}
-                      <div className="text-gray-500 text-xs mt-0.5">📍 {church.parish}</div>
+                      {church.pastor_name && <div className="flex items-center gap-1 text-gray-600 text-xs mt-1"><IconUser className="w-3.5 h-3.5" /> {church.pastor_name}</div>}
+                      <div className="flex items-center gap-1 text-gray-500 text-xs mt-0.5"><IconMapPin className="w-3 h-3" /> {church.parish}</div>
                       {church.phone && (
                         <a href={`https://wa.me/58${church.phone}`} target="_blank" rel="noreferrer"
-                          className="block mt-2 text-green-600 text-xs font-medium hover:underline">
-                          📱 WhatsApp →
+                          className="flex items-center gap-1 mt-2 text-green-600 text-xs font-medium hover:underline">
+                          <IconMessageCircle className="w-3.5 h-3.5" /> WhatsApp →
                         </a>
                       )}
-                      <div className={`mt-2 text-xs px-1.5 py-0.5 rounded-full inline-block ${church.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {church.geocode_status === 'validado' ? '✓ Validado' : '⏳ Pendiente'}
+                      <div className={`inline-flex items-center gap-1 mt-2 text-xs px-1.5 py-0.5 rounded-full ${church.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {church.geocode_status === 'validado' ? <IconCheck className="w-3 h-3" /> : <IconClock className="w-3 h-3" />}
+                        {church.geocode_status === 'validado' ? 'Validado' : 'Pendiente'}
                       </div>
                     </>
                   )}

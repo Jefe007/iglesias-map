@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import RegisterSW from "@/components/RegisterSW";
+import Toaster from "@/components/Toaster";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -36,6 +37,7 @@ export default function RootLayout({
       <body className={`${inter.className} h-full`}>
         <RegisterSW />
         {children}
+        <Toaster />
       </body>
     </html>
   );
