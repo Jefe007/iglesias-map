@@ -1,4 +1,4 @@
-const VERSION = 'v2'
+const VERSION = 'v3'
 const PAGES_CACHE = `sp-map-pages-${VERSION}`
 const STATIC_CACHE = `sp-map-static-${VERSION}`
 const TILES_CACHE = `sp-map-tiles-${VERSION}`
