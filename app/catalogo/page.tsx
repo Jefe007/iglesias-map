@@ -8,6 +8,7 @@ import { createItem, updateItem } from '@/lib/api'
 import { useEditRole } from '@/lib/useEditRole'
 import { showToast } from '@/lib/toast'
 import PasscodeGate from '@/components/PasscodeGate'
+import NavMenu from '@/components/NavMenu'
 
 const PROJECTS: Project[] = ['water', 'food', 'nfi']
 const UNITS: Unit[] = ['litros', 'kg', 'unidades', 'cajas', 'paquetes']
@@ -123,7 +124,10 @@ export default function CatalogoPage() {
           <Link href="/" className="text-white/70 hover:text-white text-sm flex-shrink-0">← Home</Link>
           <h1 className="text-sm sm:text-base font-bold truncate">Item Catalog</h1>
         </div>
-        <PasscodeGate role={role} onUnlock={unlock} onLock={lock} />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <PasscodeGate role={role} onUnlock={unlock} onLock={lock} />
+          <NavMenu />
+        </div>
       </header>
 
       <div className="max-w-2xl mx-auto p-4 space-y-5">

@@ -9,6 +9,7 @@ import { useEditRole } from '@/lib/useEditRole'
 import { showToast } from '@/lib/toast'
 import PasscodeGate from '@/components/PasscodeGate'
 import RequestForm from '@/components/RequestForm'
+import NavMenu from '@/components/NavMenu'
 
 const PROJECTS: Project[] = ['water', 'food', 'nfi']
 const STATUSES: RequestStatus[] = ['pendiente', 'preparada', 'entregada']
@@ -74,7 +75,10 @@ export default function SolicitudesPage() {
           <Link href="/" className="text-white/70 hover:text-white text-sm flex-shrink-0">← Home</Link>
           <h1 className="text-sm sm:text-base font-bold truncate">Requests</h1>
         </div>
-        <PasscodeGate role={role} onUnlock={unlock} onLock={lock} />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <PasscodeGate role={role} onUnlock={unlock} onLock={lock} />
+          <NavMenu />
+        </div>
       </header>
 
       <div className="max-w-2xl mx-auto p-4 space-y-4">

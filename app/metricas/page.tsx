@@ -9,6 +9,7 @@ import { Bar } from 'react-chartjs-2'
 import { Church, DistributionItem, Distribution, Item, Project, PROJECT_LABELS, PROJECT_COLORS } from '@/lib/supabase'
 import { getChurches, getAllDistributions, getAllDistributionItems, getItems } from '@/lib/offlineStore'
 import { showToast } from '@/lib/toast'
+import NavMenu from '@/components/NavMenu'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
@@ -204,6 +205,7 @@ export default function MetricasPage() {
           <button onClick={handleExportPdf} disabled={exporting} className="text-xs sm:text-sm bg-olive hover:bg-[var(--olive-600)] px-2.5 sm:px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 whitespace-nowrap">
             {exporting ? 'Generating…' : 'PDF'}
           </button>
+          <NavMenu />
         </div>
       </header>
 

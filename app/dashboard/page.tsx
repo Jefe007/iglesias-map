@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Church, Distribution } from '@/lib/supabase'
 import { getChurches, getAllDistributions } from '@/lib/offlineStore'
+import NavMenu from '@/components/NavMenu'
 
 type DistributionWithCenter = Distribution & { center: { name: string; parish: string } | null }
 
@@ -114,12 +115,15 @@ export default function Dashboard() {
               <p className="text-slate-400 text-xs mt-1 font-data truncate">SAMARITAN&apos;S PURSE · DASHBOARD</p>
             </div>
           </div>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 bg-navy hover:bg-[var(--navy-700)] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] focus-visible:ring-offset-2 flex-shrink-0"
-          >
-            {Icon.map} Open Map
-          </Link>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 bg-navy hover:bg-[var(--navy-700)] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] focus-visible:ring-offset-2"
+            >
+              {Icon.map} Open Map
+            </Link>
+            <NavMenu variant="light" />
+          </div>
         </div>
       </header>
 

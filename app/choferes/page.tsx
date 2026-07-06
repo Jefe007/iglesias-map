@@ -8,6 +8,7 @@ import { createDriver, updateDriver } from '@/lib/api'
 import { useEditRole } from '@/lib/useEditRole'
 import { showToast } from '@/lib/toast'
 import PasscodeGate from '@/components/PasscodeGate'
+import NavMenu from '@/components/NavMenu'
 
 function AddDriverForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: () => void }) {
   const [name, setName] = useState('')
@@ -107,7 +108,10 @@ export default function ChoferesPage() {
           <Link href="/" className="text-white/70 hover:text-white text-sm flex-shrink-0">← Home</Link>
           <h1 className="text-sm sm:text-base font-bold truncate">Drivers</h1>
         </div>
-        <PasscodeGate role={role} onUnlock={unlock} onLock={lock} />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <PasscodeGate role={role} onUnlock={unlock} onLock={lock} />
+          <NavMenu />
+        </div>
       </header>
 
       <div className="max-w-md mx-auto p-4 space-y-4">

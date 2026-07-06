@@ -13,6 +13,7 @@ import { showToast } from '@/lib/toast'
 import { IconSearch, IconX, IconMapPin, IconHospital, IconCompass, IconUser, IconUsers, IconClock } from '@/lib/icons'
 import MapLegend from '@/components/MapLegend'
 import DriversPanel from '@/components/DriversPanel'
+import NavMenu from '@/components/NavMenu'
 import { useFocusTrap } from '@/lib/useFocusTrap'
 import { isSpecialLocation, LOCATION_LABELS, LOCATION_COLORS } from '@/lib/locationTypes'
 
@@ -518,6 +519,7 @@ function MapaPageInner() {
           >
             Dashboard
           </Link>
+          <NavMenu />
         </div>
       </header>
 

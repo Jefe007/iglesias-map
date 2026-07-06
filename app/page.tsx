@@ -8,6 +8,7 @@ import { useOfflineStatus } from '@/lib/useOfflineStatus'
 import { useEditRole } from '@/lib/useEditRole'
 import { IconSearch, IconX, IconUser } from '@/lib/icons'
 import PasscodeGate from '@/components/PasscodeGate'
+import NavMenu from '@/components/NavMenu'
 
 const ALL_PROJECTS: Project[] = ['water', 'food', 'nfi']
 
@@ -89,6 +90,7 @@ export default function InicioPage() {
           <Link href="/metricas" className="hidden md:inline-block bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Metrics</Link>
           <Link href="/catalogo" className="hidden md:inline-block bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Catalog</Link>
           <Link href="/dashboard" className="bg-olive hover:bg-[var(--olive-600)] px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Dashboard</Link>
+          <NavMenu />
         </div>
       </header>
 

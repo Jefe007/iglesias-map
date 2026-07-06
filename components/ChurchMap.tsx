@@ -43,14 +43,32 @@ function makePin(fill: string, glyph: 'star' | 'cross', size = 1) {
   })
 }
 
-// Circular logo badge for the Samaritan's Purse field hospital.
-// Uses the logo image; if it's missing, falls back to an on-brand SVG
-// (olive-green ring + navy cross) so the marker never breaks.
+// Circular badge for the Samaritan's Purse field hospital: a plain red cross
+// on white, matching the medical/emergency convention rather than the SP logo.
 function makeHospitalIcon(isSelected: boolean) {
   const d = isSelected ? 56 : 46
+  const html = `
+    <div style="width:${d}px;height:${d}px;border-radius:9999px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);border:2px solid #dc2626;overflow:hidden;display:flex;align-items:center;justify-content:center">
+      <svg viewBox="0 0 24 24" width="62%" height="62%"><rect x="10" y="3" width="4" height="18" rx="1" fill="#dc2626"/><rect x="3" y="10" width="18" height="4" rx="1" fill="#dc2626"/></svg>
+    </div>`
+  return L.divIcon({
+    html,
+    className: isSelected ? 'church-pin selected' : 'church-pin',
+    iconSize: [d, d],
+    iconAnchor: [d / 2, d / 2],
+    popupAnchor: [0, -d / 2 - 2],
+  })
+}
+
+// Circular logo badge for the Base: always shows the Samaritan's Purse logo
+// (unlike Warehouse/Desalination Plant below, which show the location's own
+// photo) so it never breaks even before a real photo is added.
+function makeBaseIcon(isSelected: boolean) {
+  const d = isSelected ? 56 : 46
+  const ring = LOCATION_COLORS.base
   const fallback = `<svg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'><circle cx='50' cy='50' r='48' fill='%23fff'/><path d='M50 14a36 36 0 1 0 0 72 36 36 0 0 0 0-72zm0 10a26 26 0 0 1 23 14H53V24h-3zm-3 0v40a26 26 0 0 1-23-26 26 26 0 0 1 23-14z' fill='%23808733'/><g fill='%23172a45'><rect x='44' y='30' width='12' height='44' rx='2'/><rect x='34' y='42' width='32' height='12' rx='2'/></g></svg>`
   const html = `
-    <div style="width:${d}px;height:${d}px;border-radius:9999px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);border:2px solid #fff;overflow:hidden;display:flex;align-items:center;justify-content:center">
+    <div style="width:${d}px;height:${d}px;border-radius:9999px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);border:2px solid ${ring};overflow:hidden;display:flex;align-items:center;justify-content:center">
       <img src="/logosp.jpg" alt="Samaritan's Purse" style="width:100%;height:100%;object-fit:cover"
         onerror="this.onerror=null;this.src=&quot;data:image/svg+xml;utf8,${fallback}&quot;" />
     </div>`
@@ -63,9 +81,8 @@ function makeHospitalIcon(isSelected: boolean) {
   })
 }
 
-// Circular badge for Base/Warehouse/Desalination Plant: shows the location's own photo
-// (unlike the hospital badge, which always shows the SP logo) with a colored,
-// type-specific fallback glyph when there's no photo yet or it fails to load.
+// Circular badge for Warehouse/Desalination Plant: shows the location's own photo
+// with a colored, type-specific fallback glyph when there's no photo yet or it fails to load.
 const LOCATION_GLYPHS: Record<SpecialLocationType, string> = {
   base: `<rect x='47' y='20' width='4' height='60' rx='1'/><path d='M51 22 L78 32 L51 42 Z'/>`,
   deposito: `<rect x='25' y='42' width='50' height='34' rx='2'/><rect x='30' y='28' width='40' height='16' rx='2'/>`,
@@ -95,6 +112,7 @@ function makeLocationIcon(church: Church, kind: SpecialLocationType, isSelected:
 
 function getIcon(church: Church, isSelected: boolean) {
   if (church.marker_type === 'hospital') return makeHospitalIcon(isSelected)
+  if (church.marker_type === 'base') return makeBaseIcon(isSelected)
   if (isSpecialLocation(church.marker_type)) return makeLocationIcon(church, church.marker_type, isSelected)
   const fill = church.is_distribution_center ? '#dc2626'
     : church.geocode_status === 'validado' ? '#2563eb'
