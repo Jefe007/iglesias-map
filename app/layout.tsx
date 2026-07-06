@@ -7,12 +7,12 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Iglesias La Guaira — Centros de Distribución",
-  description: "Mapa de iglesias y centros de distribución en La Guaira, Venezuela",
+  title: "La Guaira Churches — Distribution Centers",
+  description: "Map of churches and distribution centers in La Guaira, Venezuela",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Red La Guaira",
+    title: "La Guaira Network",
   },
   icons: {
     icon: [
@@ -33,7 +33,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className="h-full">
+    <html lang="en" className="h-full">
       <body className={`${inter.className} h-full`}>
         <RegisterSW />
         {children}

@@ -6,7 +6,8 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents,
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Church } from '@/lib/supabase'
-import { IconHospital, IconMapPin, IconUser, IconMessageCircle, IconCheck, IconClock } from '@/lib/icons'
+import { IconHospital, IconMapPin, IconUser, IconMessageCircle, IconCheck, IconClock, IconCompass, IconX } from '@/lib/icons'
+import { isSpecialLocation, LOCATION_LABELS, LOCATION_COLORS, type SpecialLocationType } from '@/lib/locationTypes'
 
 delete (L.Icon.Default.prototype as any)._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -62,8 +63,39 @@ function makeHospitalIcon(isSelected: boolean) {
   })
 }
 
+// Circular badge for Base/Warehouse/Desalination Plant: shows the location's own photo
+// (unlike the hospital badge, which always shows the SP logo) with a colored,
+// type-specific fallback glyph when there's no photo yet or it fails to load.
+const LOCATION_GLYPHS: Record<SpecialLocationType, string> = {
+  base: `<rect x='47' y='20' width='4' height='60' rx='1'/><path d='M51 22 L78 32 L51 42 Z'/>`,
+  deposito: `<rect x='25' y='42' width='50' height='34' rx='2'/><rect x='30' y='28' width='40' height='16' rx='2'/>`,
+  desalinizador: `<path d='M50 16 C66 34 78 48 78 60 A32 32 0 0 1 22 60 C22 48 34 34 50 16 Z'/>`,
+}
+
+function makeLocationIcon(church: Church, kind: SpecialLocationType, isSelected: boolean) {
+  const d = isSelected ? 56 : 46
+  const ring = LOCATION_COLORS[kind]
+  const glyph = LOCATION_GLYPHS[kind]
+  const fallback = `<svg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'><circle cx='50' cy='50' r='48' fill='${ring.replace('#', '%23')}'/><g fill='%23fff'>${glyph}</g></svg>`
+  const inner = church.image_url
+    ? `<img src="${church.image_url}" alt="${church.name}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src=&quot;data:image/svg+xml;utf8,${fallback}&quot;" />`
+    : `<img src="data:image/svg+xml;utf8,${fallback}" alt="${church.name}" style="width:100%;height:100%;object-fit:cover" />`
+  const html = `
+    <div style="width:${d}px;height:${d}px;border-radius:9999px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);border:2px solid ${ring};overflow:hidden;display:flex;align-items:center;justify-content:center">
+      ${inner}
+    </div>`
+  return L.divIcon({
+    html,
+    className: isSelected ? 'church-pin selected' : 'church-pin',
+    iconSize: [d, d],
+    iconAnchor: [d / 2, d / 2],
+    popupAnchor: [0, -d / 2 - 2],
+  })
+}
+
 function getIcon(church: Church, isSelected: boolean) {
   if (church.marker_type === 'hospital') return makeHospitalIcon(isSelected)
+  if (isSpecialLocation(church.marker_type)) return makeLocationIcon(church, church.marker_type, isSelected)
   const fill = church.is_distribution_center ? '#dc2626'
     : church.geocode_status === 'validado' ? '#2563eb'
     : '#94a3b8'
@@ -157,7 +189,7 @@ function HybridLabelsManager() {
 
   useEffect(() => {
     const handler = (e: L.LayersControlEvent) => {
-      setShowLabels(e.name === 'Satélite + Nombres')
+      setShowLabels(e.name === 'Satellite + Labels')
     }
     map.on('baselayerchange', handler)
     return () => { map.off('baselayerchange', handler) }
@@ -199,6 +231,36 @@ function buildPositions(churches: Church[]) {
 // Distinct colors for each distribution center's route network
 const ROUTE_COLORS = ['#7c3aed', '#0891b2', '#db2777', '#ea580c']
 
+type RouteState = {
+  target: Church
+  geometry: [number, number][] | null
+  distanceKm: number | null
+  durationMin: number | null
+  loading: boolean
+  error: string | null
+}
+
+function getCurrentPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('This browser does not support geolocation')); return }
+    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 })
+  })
+}
+
+// Public OSRM (no API key): takes lon,lat (reversed from Leaflet) and returns
+// distance/duration + the driving route geometry. No offline fallback —
+// calculating a real street route can't be done without this external service.
+async function fetchOsrmRoute(from: [number, number], to: [number, number]) {
+  const url = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('Could not calculate the route')
+  const data = await res.json()
+  const route = data.routes?.[0]
+  if (!route) throw new Error('No driving route was found to that point')
+  const geometry: [number, number][] = route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]])
+  return { geometry, distanceKm: route.distance / 1000, durationMin: Math.round(route.duration / 60) }
+}
+
 interface Props {
   churches: Church[]
   allChurches?: Church[]
@@ -225,6 +287,30 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
   const centerColor = new Map<string, string>()
   centers.forEach((c, i) => centerColor.set(c.id, ROUTE_COLORS[i % ROUTE_COLORS.length]))
 
+  const [routeState, setRouteState] = useState<RouteState | null>(null)
+
+  async function requestRoute(church: Church) {
+    const dest = positions.get(church.id) || getCoords(church, 0, 1)
+    setRouteState({ target: church, geometry: null, distanceKm: null, durationMin: null, loading: true, error: null })
+    try {
+      const pos = await getCurrentPosition()
+      const origin: [number, number] = [pos.coords.latitude, pos.coords.longitude]
+      const { geometry, distanceKm, durationMin } = await fetchOsrmRoute(origin, dest)
+      setRouteState({ target: church, geometry, distanceKm, durationMin, loading: false, error: null })
+    } catch (err) {
+      let message = 'Could not calculate the route.'
+      if (err && typeof err === 'object' && 'code' in err) {
+        const code = (err as GeolocationPositionError).code
+        message = code === 1 ? 'You need to grant location permission to calculate the route.'
+          : code === 2 ? 'Could not get your current location.'
+          : 'Timed out waiting for your location.'
+      } else if (err instanceof TypeError) {
+        message = 'Routes need an internet connection.'
+      }
+      setRouteState({ target: church, geometry: null, distanceKm: null, durationMin: null, loading: false, error: message })
+    }
+  }
+
   return (
     <MapContainer
       center={[10.6017, -66.9297]}
@@ -232,7 +318,7 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
       style={{ height: '100%', width: '100%', cursor: (settingLocationFor || pickingLocation) ? 'crosshair' : undefined }}
     >
       <LayersControl position="topright">
-        <LayersControl.BaseLayer checked name="Mapa">
+        <LayersControl.BaseLayer checked name="Map">
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -240,7 +326,7 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
           />
         </LayersControl.BaseLayer>
 
-        <LayersControl.BaseLayer name="Satélite">
+        <LayersControl.BaseLayer name="Satellite">
           <TileLayer
             attribution='Tiles &copy; Esri'
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -248,7 +334,7 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
           />
         </LayersControl.BaseLayer>
 
-        <LayersControl.BaseLayer name="Satélite + Nombres">
+        <LayersControl.BaseLayer name="Satellite + Labels">
           <TileLayer
             attribution='Tiles &copy; Esri'
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -286,6 +372,24 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
         )
       })}
 
+      {routeState?.geometry && (
+        <Polyline positions={routeState.geometry} pathOptions={{ color: '#1b2a4a', weight: 5, opacity: 0.75 }} />
+      )}
+
+      {routeState && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] bg-white shadow-xl rounded-xl px-4 py-3 max-w-[92vw] w-80 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-semibold text-slate-800 truncate">Route to {routeState.target.name}</div>
+            <button onClick={() => setRouteState(null)} aria-label="Close route" className="text-slate-400 hover:text-slate-600 flex-shrink-0"><IconX className="w-4 h-4" /></button>
+          </div>
+          {routeState.loading && <div className="text-slate-500 text-xs mt-1">Calculating route…</div>}
+          {routeState.error && <div className="text-red-600 text-xs mt-1">{routeState.error}</div>}
+          {routeState.distanceKm != null && routeState.durationMin != null && (
+            <div className="text-slate-600 text-xs mt-1 font-data">{routeState.distanceKm.toFixed(1)} km · {routeState.durationMin} min by car</div>
+          )}
+        </div>
+      )}
+
       {Object.entries(groups).map(([, parishChurches]) =>
         parishChurches.map((church, idx) => {
           const pos = positions.get(church.id) || getCoords(church, idx, parishChurches.length)
@@ -295,7 +399,7 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
               key={church.id}
               position={pos}
               icon={icon}
-              zIndexOffset={church.marker_type === 'hospital' ? 1000 : church.is_distribution_center ? 500 : 0}
+              zIndexOffset={church.marker_type === 'hospital' ? 1000 : isSpecialLocation(church.marker_type) ? 900 : church.is_distribution_center ? 500 : 0}
               eventHandlers={{ click: () => onSelect(church) }}
             >
               <Popup>
@@ -307,15 +411,33 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
                   )}
                   {church.marker_type === 'hospital' ? (
                     <>
-                      <div className="flex items-center gap-1 text-[#808733] text-xs font-bold mb-0.5"><IconHospital className="w-3.5 h-3.5" /> Hospital de Campaña</div>
+                      <div className="flex items-center gap-1 text-[#808733] text-xs font-bold mb-0.5"><IconHospital className="w-3.5 h-3.5" /> Field Hospital</div>
                       <div className="font-bold text-sm leading-tight">{church.name}</div>
                       <div className="flex items-center gap-1 text-gray-500 text-xs mt-0.5"><IconMapPin className="w-3 h-3" /> {church.parish}</div>
+                      <button onClick={() => requestRoute(church)} className="flex items-center gap-1 mt-2 text-navy text-xs font-medium hover:underline">
+                        <IconCompass className="w-3.5 h-3.5" /> Get directions
+                      </button>
+                    </>
+                  ) : isSpecialLocation(church.marker_type) ? (
+                    <>
+                      <div className="text-xs font-bold mb-0.5" style={{ color: LOCATION_COLORS[church.marker_type] }}>{LOCATION_LABELS[church.marker_type]}</div>
+                      <div className="font-bold text-sm leading-tight">{church.name}</div>
+                      <div className="flex items-center gap-1 text-gray-500 text-xs mt-0.5"><IconMapPin className="w-3 h-3" /> {church.parish}</div>
+                      {church.phone && (
+                        <a href={`https://wa.me/58${church.phone}`} target="_blank" rel="noreferrer"
+                          className="flex items-center gap-1 mt-2 text-green-600 text-xs font-medium hover:underline">
+                          <IconMessageCircle className="w-3.5 h-3.5" /> WhatsApp →
+                        </a>
+                      )}
+                      <button onClick={() => requestRoute(church)} className="flex items-center gap-1 mt-2 text-navy text-xs font-medium hover:underline">
+                        <IconCompass className="w-3.5 h-3.5" /> Get directions
+                      </button>
                     </>
                   ) : (
                     <>
                       {church.is_distribution_center && (
                         <div className="flex items-center gap-1.5 text-red-600 text-xs font-bold mb-1">
-                          <span className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" /> Centro de Distribución
+                          <span className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" /> Distribution Center
                         </div>
                       )}
                       <div className="font-bold text-sm leading-tight">{church.name}</div>
@@ -329,8 +451,11 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
                       )}
                       <div className={`inline-flex items-center gap-1 mt-2 text-xs px-1.5 py-0.5 rounded-full ${church.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                         {church.geocode_status === 'validado' ? <IconCheck className="w-3 h-3" /> : <IconClock className="w-3 h-3" />}
-                        {church.geocode_status === 'validado' ? 'Validado' : 'Pendiente'}
+                        {church.geocode_status === 'validado' ? 'Verified' : 'Pending'}
                       </div>
+                      <button onClick={() => requestRoute(church)} className="flex items-center gap-1 mt-2 text-navy text-xs font-medium hover:underline">
+                        <IconCompass className="w-3.5 h-3.5" /> Get directions
+                      </button>
                     </>
                   )}
                 </div>

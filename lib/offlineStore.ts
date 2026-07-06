@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Church, Distribution } from './supabase'
+import type { Church, Distribution, DistributionItem, Driver, Item, Project, ServiceRequest } from './supabase'
 import { getDb, type MutationRecord } from './offlineDb'
 
 function applyMutations<T extends { id: string }>(base: T[], mutations: MutationRecord[], kind: MutationRecord['kind']): T[] {
@@ -71,6 +71,126 @@ export async function getDistributionsForCenter(centerId: string): Promise<{ dat
       .sort((a, b) => b.distributed_at.localeCompare(a.distributed_at)),
     offline,
   }
+}
+
+// Sin capa de mutaciones pendientes: mientras una entrega creada offline no se
+// sincronice, sus líneas no aparecen aquí todavía (la cabecera en getAllDistributions
+// sí aparece de inmediato). Ver la nota en lib/api.ts#createDistribution.
+export async function getAllDistributionItems(): Promise<{ data: DistributionItem[]; offline: boolean }> {
+  const db = await getDb()
+  let base: DistributionItem[] = []
+  let offline = false
+  try {
+    const { data, error } = await supabase.from('distribution_items').select('*')
+    if (error) throw error
+    base = data || []
+    if (db) {
+      const tx = db.transaction('distributionItems', 'readwrite')
+      await tx.store.clear()
+      await Promise.all(base.map(row => tx.store.put(row)))
+      await tx.done
+    }
+  } catch {
+    offline = true
+    base = db ? await db.getAll('distributionItems') : []
+  }
+  return { data: base, offline }
+}
+
+export async function getItems(): Promise<{ data: Item[]; offline: boolean }> {
+  const db = await getDb()
+  let base: Item[] = []
+  let offline = false
+  try {
+    const { data, error } = await supabase.from('items').select('*').order('project').order('name')
+    if (error) throw error
+    base = data || []
+    if (db) {
+      const tx = db.transaction('items', 'readwrite')
+      await tx.store.clear()
+      await Promise.all(base.map(row => tx.store.put(row)))
+      await tx.done
+    }
+  } catch {
+    offline = true
+    base = db ? await db.getAll('items') : []
+  }
+  const mutations = db ? await db.getAll('mutations') : []
+  return { data: applyMutations(base, mutations, 'item'), offline }
+}
+
+// A diferencia de churches/distributions, los cambios de proyectos activos por centro
+// requieren conexión (ver lib/api.ts#setCenterProjects) — es una acción de configuración
+// poco frecuente, no algo que el equipo de campo necesite hacer sin señal. Por eso esta
+// lectura solo cachea para poder mostrar los badges offline, sin capa de mutaciones pendientes.
+export async function getCenterProjects(): Promise<{ data: Record<string, Project[]>; offline: boolean }> {
+  const db = await getDb()
+  let rows: { church_id: string; project: Project }[] = []
+  let offline = false
+  try {
+    const { data, error } = await supabase.from('center_projects').select('church_id, project')
+    if (error) throw error
+    rows = data || []
+    if (db) {
+      const grouped = new Map<string, Project[]>()
+      for (const row of rows) grouped.set(row.church_id, [...(grouped.get(row.church_id) || []), row.project])
+      const tx = db.transaction('centerProjects', 'readwrite')
+      await tx.store.clear()
+      await Promise.all(Array.from(grouped, ([church_id, projects]) => tx.store.put({ church_id, projects })))
+      await tx.done
+    }
+  } catch {
+    offline = true
+    const records = db ? await db.getAll('centerProjects') : []
+    return { data: Object.fromEntries(records.map(r => [r.church_id, r.projects])), offline }
+  }
+  const data: Record<string, Project[]> = {}
+  for (const row of rows) data[row.church_id] = [...(data[row.church_id] || []), row.project]
+  return { data, offline }
+}
+
+export async function getRequests(): Promise<{ data: ServiceRequest[]; offline: boolean }> {
+  const db = await getDb()
+  let base: ServiceRequest[] = []
+  let offline = false
+  try {
+    const { data, error } = await supabase.from('requests').select('*').order('created_at', { ascending: false })
+    if (error) throw error
+    base = data || []
+    if (db) {
+      const tx = db.transaction('requests', 'readwrite')
+      await tx.store.clear()
+      await Promise.all(base.map(row => tx.store.put(row)))
+      await tx.done
+    }
+  } catch {
+    offline = true
+    base = db ? await db.getAll('requests') : []
+  }
+  const mutations = db ? await db.getAll('mutations') : []
+  return { data: applyMutations(base, mutations, 'request'), offline }
+}
+
+export async function getDrivers(): Promise<{ data: Driver[]; offline: boolean }> {
+  const db = await getDb()
+  let base: Driver[] = []
+  let offline = false
+  try {
+    const { data, error } = await supabase.from('drivers').select('*').order('name')
+    if (error) throw error
+    base = data || []
+    if (db) {
+      const tx = db.transaction('drivers', 'readwrite')
+      await tx.store.clear()
+      await Promise.all(base.map(row => tx.store.put(row)))
+      await tx.done
+    }
+  } catch {
+    offline = true
+    base = db ? await db.getAll('drivers') : []
+  }
+  const mutations = db ? await db.getAll('mutations') : []
+  return { data: applyMutations(base, mutations, 'driver'), offline }
 }
 
 export async function getPendingMutationCount(): Promise<number> {

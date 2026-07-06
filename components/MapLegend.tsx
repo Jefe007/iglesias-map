@@ -1,10 +1,13 @@
 import { IconHospital } from '@/lib/icons'
+import { LOCATION_LABELS, LOCATION_COLORS, type SpecialLocationType } from '@/lib/locationTypes'
 
 const ROWS: { color: string; label: string }[] = [
-  { color: '#2563eb', label: 'Iglesia' },
-  { color: '#94a3b8', label: 'Iglesia (ubicación pendiente)' },
-  { color: '#dc2626', label: 'Centro de distribución' },
+  { color: '#2563eb', label: 'Church' },
+  { color: '#94a3b8', label: 'Church (location pending)' },
+  { color: '#dc2626', label: 'Distribution center' },
 ]
+
+const LOCATION_TYPES: SpecialLocationType[] = ['base', 'deposito', 'desalinizador']
 
 export default function MapLegend() {
   return (
@@ -19,8 +22,14 @@ export default function MapLegend() {
         <span className="w-2.5 h-2.5 rounded-full flex items-center justify-center flex-shrink-0 bg-[#808733]">
           <IconHospital className="w-2 h-2 text-white" />
         </span>
-        <span>Hospital de campaña</span>
+        <span>Field hospital</span>
       </div>
+      {LOCATION_TYPES.map(type => (
+        <div key={type} className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: LOCATION_COLORS[type] }} />
+          <span>{LOCATION_LABELS[type]}</span>
+        </div>
+      ))}
     </div>
   )
 }

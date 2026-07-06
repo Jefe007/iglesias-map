@@ -23,7 +23,7 @@ export default function Toaster() {
             {t.kind === 'error' ? <IconX className="w-4 h-4" /> : <IconCheck className="w-4 h-4" />}
           </span>
           <span className="flex-1">{t.message}</span>
-          <button onClick={() => dismissToast(t.id)} aria-label="Cerrar notificación" className="flex-shrink-0 text-white/60 hover:text-white">
+          <button onClick={() => dismissToast(t.id)} aria-label="Dismiss notification" className="flex-shrink-0 text-white/60 hover:text-white">
             <IconX className="w-3.5 h-3.5" />
           </button>
         </div>

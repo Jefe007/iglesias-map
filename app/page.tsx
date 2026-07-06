@@ -1,901 +1,175 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import dynamic from 'next/dynamic'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import type { Map as LeafletMap } from 'leaflet'
-import { supabase, Church, Distribution } from '@/lib/supabase'
-import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStoredPasscode, deleteDistribution } from '@/lib/api'
-import { getChurches as getChurchesOffline, getDistributionsForCenter } from '@/lib/offlineStore'
+import { Church, Project, ServiceRequest, PROJECT_LABELS, PROJECT_COLORS } from '@/lib/supabase'
+import { getChurches, getAllDistributions, getRequests } from '@/lib/offlineStore'
 import { useOfflineStatus } from '@/lib/useOfflineStatus'
-import { showToast } from '@/lib/toast'
-import { IconSearch, IconX, IconMapPin, IconHospital, IconCompass, IconUser, IconUsers, IconClock } from '@/lib/icons'
-import MapLegend from '@/components/MapLegend'
-import { useFocusTrap } from '@/lib/useFocusTrap'
+import { useEditRole } from '@/lib/useEditRole'
+import { IconSearch, IconX, IconUser } from '@/lib/icons'
+import PasscodeGate from '@/components/PasscodeGate'
 
-const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false })
-const ChurchForm = dynamic(() => import('@/components/ChurchForm'), { ssr: false })
-const DistributionForm = dynamic(() => import('@/components/DistributionForm'), { ssr: false })
+const ALL_PROJECTS: Project[] = ['water', 'food', 'nfi']
 
-const DEFAULT_PARISHES = ['Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet', 'Caracas']
-const ALL_OPTION = 'All'
-
-type LayerKey = 'churches' | 'distribution' | 'hospital'
-type Layers = Record<LayerKey, boolean>
-
-function layerOf(c: Church): LayerKey {
-  if (c.marker_type === 'hospital') return 'hospital'
-  if (c.is_distribution_center) return 'distribution'
-  return 'churches'
+function formatRelativeDate(dateStr: string): string {
+  const days = Math.floor((Date.now() - new Date(dateStr + 'T00:00:00').getTime()) / 86400000)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 30) return `${days} days ago`
+  const months = Math.floor(days / 30)
+  return `${months} month${months !== 1 ? 's' : ''} ago`
 }
 
-export default function Home() {
-  const [allChurches, setAllChurches] = useState<Church[]>([])
-  const [parish, setParish] = useState(ALL_OPTION)
-  const [layers, setLayers] = useState<Layers>({ churches: true, distribution: true, hospital: true })
-  const [layersOpen, setLayersOpen] = useState(false)
-  const [selected, setSelected] = useState<Church | null>(null)
+export default function InicioPage() {
+  const [churches, setChurches] = useState<Church[]>([])
+  const [centerProjects, setCenterProjects] = useState<Record<string, Project[]>>({})
+  const [lastDelivery, setLastDelivery] = useState<Record<string, string>>({})
+  const [pendingRequests, setPendingRequests] = useState<Record<string, { count: number; urgent: boolean }>>({})
   const [loading, setLoading] = useState(true)
-  const [settingLocationFor, setSettingLocationFor] = useState<Church | null>(null)
   const [search, setSearch] = useState('')
-  const [sheetOpen, setSheetOpen] = useState(false)
-  const [showRoutes, setShowRoutes] = useState(false)
-  const mapRef = useRef<LeafletMap | null>(null)
-  const sheetRef = useRef<HTMLDivElement | null>(null)
-  const sheetDrag = useRef<{ startY: number; startOffset: number; dragging: boolean } | null>(null)
-  const suppressSheetClick = useRef(false)
-
-  // Edit mode / passcode
-  const [editMode, setEditMode] = useState(false)
-  const [passcodeModalOpen, setPasscodeModalOpen] = useState(false)
-  const [passcodeInput, setPasscodeInput] = useState('')
-  const [passcodeError, setPasscodeError] = useState(false)
-  const [verifying, setVerifying] = useState(false)
-
-  // Add/Edit form
-  const [formOpen, setFormOpen] = useState(false)
-  const [formChurch, setFormChurch] = useState<Church | null>(null)
-  const [pickingForForm, setPickingForForm] = useState(false)
-  const [pickedCoords, setPickedCoords] = useState<{ lat: number; lng: number } | null>(null)
-
-  // Delete confirmation
-  const [confirmDeleteChurch, setConfirmDeleteChurch] = useState<Church | null>(null)
-  const [deleting, setDeleting] = useState(false)
-
-  // Distribution log (for the selected distribution center)
-  const [distributions, setDistributions] = useState<Distribution[]>([])
-  const [distributionsLoading, setDistributionsLoading] = useState(false)
-  const [distributionFormOpen, setDistributionFormOpen] = useState(false)
-  const [confirmDeleteDistribution, setConfirmDeleteDistribution] = useState<Distribution | null>(null)
-  const [deletingDistribution, setDeletingDistribution] = useState(false)
-
   const { online, pending, syncing } = useOfflineStatus()
+  const { role, unlock, lock } = useEditRole()
 
-  const fetchChurches = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true)
-    const { data } = await getChurchesOffline()
-    setAllChurches(data)
+    const [{ data: allChurches }, { data: distributions }, { data: requests }] = await Promise.all([
+      getChurches(), getAllDistributions(), getRequests(),
+    ])
+    setChurches(allChurches.filter(c => c.is_distribution_center))
+
+    const last: Record<string, string> = {}
+    for (const d of distributions) {
+      if (!last[d.distribution_center_id] || d.distributed_at > last[d.distribution_center_id]) {
+        last[d.distribution_center_id] = d.distributed_at
+      }
+    }
+    setLastDelivery(last)
+
+    const pendingByChurch: Record<string, { count: number; urgent: boolean }> = {}
+    for (const r of requests) {
+      if (r.status !== 'pendiente') continue
+      const entry = pendingByChurch[r.church_id] || { count: 0, urgent: false }
+      entry.count++
+      if (r.urgency === 'urgente') entry.urgent = true
+      pendingByChurch[r.church_id] = entry
+    }
+    setPendingRequests(pendingByChurch)
+
     setLoading(false)
   }, [])
 
-  const churches = parish === ALL_OPTION ? allChurches : allChurches.filter(c => c.parish === parish)
+  useEffect(() => { fetchAll() }, [fetchAll])
 
-  useEffect(() => { fetchChurches() }, [fetchChurches])
-
-  const wasSyncing = useRef(false)
-  useEffect(() => {
-    if (wasSyncing.current && !syncing) fetchChurches()
-    wasSyncing.current = syncing
-  }, [syncing, fetchChurches])
-
-  const hadPending = useRef(false)
-  useEffect(() => {
-    if (pending > 0) hadPending.current = true
-    else if (hadPending.current) {
-      showToast('Sincronización completa')
-      hadPending.current = false
-    }
-  }, [pending])
-
-  const fetchDistributions = useCallback(async (centerId: string) => {
-    setDistributionsLoading(true)
-    const { data } = await getDistributionsForCenter(centerId)
-    setDistributions(data)
-    setDistributionsLoading(false)
-  }, [])
-
-  useEffect(() => {
-    if (selected && selected.is_distribution_center) {
-      fetchDistributions(selected.id)
-    } else {
-      setDistributions([])
-    }
-  }, [selected, fetchDistributions])
-
-  const handleDeleteDistributionConfirmed = async () => {
-    if (!confirmDeleteDistribution) return
-    setDeletingDistribution(true)
-    try {
-      await deleteDistribution(confirmDeleteDistribution.id)
-      setConfirmDeleteDistribution(null)
-      if (selected) fetchDistributions(selected.id)
-      showToast('Entrega eliminada')
-    } catch (e) {
-      showToast((e as Error).message, 'error')
-    } finally {
-      setDeletingDistribution(false)
-    }
-  }
-
-  const [exportPreviewMode, setExportPreviewMode] = useState(false)
-  const [exportTime, setExportTime] = useState('')
-  const [exporting, setExporting] = useState(false)
-  const exportAreaRef = useRef<HTMLDivElement | null>(null)
-
-  // Re-fit the map whenever the chrome (header/filters/sidebar) is hidden or shown,
-  // since hiding it changes the map container's available size. Leaflet's own
-  // re-pan on invalidateSize() can misfire when the container jumps size (e.g.
-  // right after a high-zoom flyTo), so pin the view back explicitly afterward.
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-    const center = map.getCenter()
-    const zoom = map.getZoom()
-    const id = requestAnimationFrame(() => {
-      map.invalidateSize()
-      map.setView(center, zoom, { animate: false })
-    })
-    return () => cancelAnimationFrame(id)
-  }, [exportPreviewMode])
-
-  const handleStartExportPreview = () => {
-    setExportTime(new Date().toLocaleString())
-    setExportPreviewMode(true)
-  }
-  const handleCancelExportPreview = () => setExportPreviewMode(false)
-
-  const handleConfirmExportPdf = async () => {
-    const node = exportAreaRef.current
-    if (!node) return
-    setExporting(true)
-    // Hide Leaflet's on-map controls so the exported file only shows the map itself.
-    const controls = node.querySelectorAll<HTMLElement>('.leaflet-control-zoom, .leaflet-control-layers')
-    controls.forEach(el => { el.style.visibility = 'hidden' })
-    try {
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import('html2canvas-pro'),
-        import('jspdf'),
-      ])
-      const canvas = await html2canvas(node, { useCORS: true, backgroundColor: '#ffffff', scale: 2 })
-      const imgData = canvas.toDataURL('image/jpeg', 0.92)
-      const pdf = new jsPDF({
-        orientation: canvas.width >= canvas.height ? 'landscape' : 'portrait',
-        unit: 'px',
-        format: [canvas.width, canvas.height],
-      })
-      pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height)
-      pdf.save('la-guaira-distribution-map.pdf')
-      setExportPreviewMode(false)
-      showToast('PDF descargado')
-    } catch (err) {
-      showToast('No se pudo generar el PDF: ' + (err as Error).message, 'error')
-    } finally {
-      controls.forEach(el => { el.style.visibility = '' })
-      setExporting(false)
-    }
-  }
-
-  const handleSetLocation = async (church: Church, lat: number, lng: number) => {
-    try {
-      await updateChurch(church.id, { lat, lng, geocode_status: 'validado' })
-      setSettingLocationFor(null)
-      fetchChurches()
-      setSelected(prev => prev?.id === church.id ? { ...prev, lat, lng, geocode_status: 'validado' } : prev)
-      showToast('Ubicación guardada')
-    } catch (e) {
-      showToast((e as Error).message, 'error')
-    }
-  }
-
-  const openChurch = (c: Church) => { setSelected(c); setSheetOpen(true) }
-
-  const centers = churches.filter(c => c.is_distribution_center)
-  const parishOptions = Array.from(new Set([...DEFAULT_PARISHES, ...churches.map(c => c.parish)])).sort()
-
-  const reassignCenter = async (church: Church, centerId: string) => {
-    try {
-      await updateChurch(church.id, { distribution_center_id: centerId || null })
-      fetchChurches()
-      setSelected(prev => prev?.id === church.id ? { ...prev, distribution_center_id: centerId || null } : prev)
-    } catch (e) {
-      showToast((e as Error).message, 'error')
-    }
-  }
-
-  const toggleDistribution = async (church: Church) => {
-    try {
-      await updateChurch(church.id, { is_distribution_center: !church.is_distribution_center })
-      fetchChurches()
-      setSelected(prev => prev?.id === church.id ? { ...prev, is_distribution_center: !prev.is_distribution_center } : prev)
-    } catch (e) {
-      showToast((e as Error).message, 'error')
-    }
-  }
-
-  const activateEditMode = async () => {
-    const stored = getStoredPasscode()
-    if (stored) {
-      const ok = await verifyPasscode(stored)
-      if (ok) { setEditMode(true); return }
-    }
-    setPasscodeModalOpen(true)
-  }
-
-  const submitPasscode = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setVerifying(true)
-    const ok = await verifyPasscode(passcodeInput)
-    setVerifying(false)
-    if (ok) {
-      setStoredPasscode(passcodeInput)
-      setEditMode(true)
-      setPasscodeModalOpen(false)
-      setPasscodeInput('')
-      setPasscodeError(false)
-    } else {
-      setPasscodeError(true)
-    }
-  }
-
-  const openAddChurch = () => {
-    setPickedCoords(null)
-    setFormChurch(null)
-    setFormOpen(true)
-  }
-
-  const openEditChurch = (church: Church) => {
-    setPickedCoords(null)
-    setFormChurch(church)
-    setFormOpen(true)
-  }
-
-  const closeForm = () => {
-    setFormOpen(false)
-    setFormChurch(null)
-    setPickingForForm(false)
-    setPickedCoords(null)
-  }
-
-  const handleDeleteConfirmed = async () => {
-    if (!confirmDeleteChurch) return
-    setDeleting(true)
-    try {
-      await deleteChurch(confirmDeleteChurch.id)
-      setConfirmDeleteChurch(null)
-      setSelected(null)
-      fetchChurches()
-      showToast('Iglesia eliminada')
-    } catch (e) {
-      showToast((e as Error).message, 'error')
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  const closePasscodeModal = useCallback(() => {
-    setPasscodeModalOpen(false); setPasscodeInput(''); setPasscodeError(false)
-  }, [])
-  const passcodeModalRef = useFocusTrap<HTMLFormElement>(closePasscodeModal)
-
-  const cancelDeleteChurch = useCallback(() => { if (!deleting) setConfirmDeleteChurch(null) }, [deleting])
-  const confirmDeleteChurchRef = useFocusTrap<HTMLDivElement>(cancelDeleteChurch)
-
-  const cancelDeleteDistribution = useCallback(() => { if (!deletingDistribution) setConfirmDeleteDistribution(null) }, [deletingDistribution])
-  const confirmDeleteDistributionRef = useFocusTrap<HTMLDivElement>(cancelDeleteDistribution)
-
-  const distCount = churches.filter(c => c.is_distribution_center).length
-  const churchCount = churches.filter(c => c.marker_type !== 'hospital').length
-  const filtered = churches.filter(c => {
-    if (!layers[layerOf(c)]) return false
-    if (search.trim()) {
+  const filtered = churches
+    .filter(c => {
+      if (!search.trim()) return true
       const q = search.toLowerCase()
       return c.name.toLowerCase().includes(q) || (c.pastor_name || '').toLowerCase().includes(q)
-    }
-    return true
-  })
-
-  // While searching (and nothing is explicitly selected), fly the map to the
-  // top match without opening its detail panel, so results stay browsable.
-  const focusChurch = selected ?? (search.trim() && filtered.length ? filtered[0] : null)
-
-  const layerMeta: { key: LayerKey; label: string; color: string; count: number }[] = [
-    { key: 'churches',     label: 'Iglesias',                color: '#2563eb', count: churches.filter(c => layerOf(c) === 'churches').length },
-    { key: 'distribution', label: 'Centros de distribución', color: '#dc2626', count: churches.filter(c => layerOf(c) === 'distribution').length },
-    { key: 'hospital',     label: 'Hospital de campaña',     color: '#7c8729', count: churches.filter(c => layerOf(c) === 'hospital').length },
-  ]
-  const activeLayers = (Object.keys(layers) as LayerKey[]).filter(k => layers[k]).length
-
-  const activeLayerLabels = layerMeta.filter(l => layers[l.key]).map(l => l.label).join(', ') || 'Ninguna'
-
-  // Drag-to-open/close for the mobile bottom sheet. Only the "is this a real
-  // drag" case is handled here — a plain tap falls through to the button's
-  // onClick untouched, so keyboard/mouse activation keeps working exactly as
-  // before. 3.25rem below matches the handle height baked into the sheet's
-  // collapsed translate-y class.
-  const sheetClosedOffset = () => {
-    const el = sheetRef.current
-    return el ? el.getBoundingClientRect().height - 52 : 0
-  }
-  const handleSheetPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    sheetDrag.current = { startY: e.clientY, startOffset: sheetOpen || selected ? 0 : sheetClosedOffset(), dragging: false }
-    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* not all pointer types support capture; drag still works without it */ }
-  }
-  const handleSheetPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const state = sheetDrag.current
-    const el = sheetRef.current
-    if (!state || !el) return
-    const deltaY = e.clientY - state.startY
-    if (!state.dragging) {
-      if (Math.abs(deltaY) < 6) return
-      state.dragging = true
-      el.style.transitionProperty = 'none'
-    }
-    e.preventDefault()
-    const closedOffset = sheetClosedOffset()
-    const next = Math.min(Math.max(state.startOffset + deltaY, 0), closedOffset)
-    el.style.transform = `translateY(${next}px)`
-  }
-  const handleSheetPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const state = sheetDrag.current
-    const el = sheetRef.current
-    sheetDrag.current = null
-    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* no-op if it was never captured */ }
-    if (!state || !el || !state.dragging) return
-    el.style.transitionProperty = ''
-    el.style.transform = ''
-    suppressSheetClick.current = true
-    // Fixed thumb-distance thresholds rather than "past halfway": the sheet
-    // can be nearly full-screen when open, and requiring a drag across half
-    // of that would make closing it impractically far to swipe.
-    const deltaY = e.clientY - state.startY
-    const wasOpen = state.startOffset === 0
-    const shouldOpen = wasOpen ? deltaY < 100 : deltaY < -60
-    setSheetOpen(shouldOpen)
-    if (!shouldOpen && selected) setSelected(null)
-  }
-  const handleSheetPointerCancel = () => {
-    sheetDrag.current = null
-    const el = sheetRef.current
-    if (el) { el.style.transitionProperty = ''; el.style.transform = '' }
-  }
-  const handleSheetClick = () => {
-    if (suppressSheetClick.current) { suppressSheetClick.current = false; return }
-    setSheetOpen(o => !o)
-    if (selected) setSelected(null)
-  }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   return (
-    <div className="flex flex-col h-dvh bg-gray-50">
-      {/* Header */}
-      <header className={`bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg z-10 ${exportPreviewMode ? 'hidden' : ''}`}>
+    <div className="min-h-dvh bg-gray-50 font-sans-pro">
+      <header className="bg-navy text-white px-4 py-3 flex items-center justify-between shadow-lg">
         <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
           <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-9 h-9 rounded-full object-cover border-2 border-white/20 flex-shrink-0" />
           <div className="min-w-0">
-            <h1 className="text-sm sm:text-base font-bold leading-tight font-sans-pro truncate">Red de Distribución La Guaira</h1>
+            <h1 className="text-sm sm:text-base font-bold leading-tight truncate">La Guaira Distribution Network</h1>
             <p className="text-white/50 text-[11px] font-data uppercase tracking-wide truncate">Samaritan&apos;s Purse</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${!online ? 'bg-red-500/20 text-red-200' : pending > 0 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/10 text-white/50'}`}>
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <div className={`hidden sm:flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${!online ? 'bg-red-500/20 text-red-200' : pending > 0 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/10 text-white/50'}`}>
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${!online ? 'bg-red-400' : pending > 0 ? 'bg-amber-300' : 'bg-emerald-400'}`} />
-            <span className="hidden sm:inline">
-              {!online ? 'Sin conexión' : syncing ? 'Sincronizando…' : pending > 0 ? `${pending} cambio${pending !== 1 ? 's' : ''} pendiente${pending !== 1 ? 's' : ''}` : 'En línea'}
-            </span>
+            {!online ? 'Offline' : syncing ? 'Syncing…' : pending > 0 ? `${pending} pending` : 'Online'}
           </div>
-          <div className="text-right text-sm hidden sm:block">
-            <div className="text-white font-semibold font-data">{churchCount} iglesias</div>
-            <div className="text-white/50 text-xs font-data">{distCount} centros de distribución</div>
-          </div>
-          <button
-            onClick={editMode ? () => setEditMode(false) : activateEditMode}
-            title={editMode ? 'Salir del modo edición' : 'Entrar en modo edición'}
-            aria-label={editMode ? 'Salir del modo edición' : 'Entrar en modo edición'}
-            className={`p-2 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 ${editMode ? 'bg-olive text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
-          >
-            {editMode ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 9.9-1" /></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-            )}
-          </button>
-          <Link
-            href="/dashboard"
-            className="bg-olive hover:bg-[var(--olive-600)] px-3.5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-          >
-            Panel
-          </Link>
+          <Link href="/mapa" className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Map</Link>
+          <Link href="/choferes" className="hidden sm:inline-block bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Drivers</Link>
+          <Link href="/solicitudes" className="hidden sm:inline-block bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Requests</Link>
+          <Link href="/metricas" className="hidden md:inline-block bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Metrics</Link>
+          <Link href="/catalogo" className="hidden md:inline-block bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Catalog</Link>
+          <Link href="/dashboard" className="bg-olive hover:bg-[var(--olive-600)] px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Dashboard</Link>
         </div>
       </header>
 
-      {/* Filters */}
-      <div className={`bg-white border-b px-4 py-2 flex gap-3 items-center flex-wrap shadow-sm relative z-[1100] ${exportPreviewMode ? 'hidden' : ''}`}>
-        <div className="relative">
+      <div className="bg-white border-b px-4 py-2.5 flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"><IconSearch className="w-3.5 h-3.5" /></span>
           <input
             type="text"
-            placeholder="Buscar iglesia o pastor..."
+            placeholder="Search center or pastor..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="border border-gray-300 rounded-lg pl-8 pr-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="border border-gray-300 rounded-lg pl-8 pr-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {search && (
-            <button onClick={() => setSearch('')} aria-label="Limpiar búsqueda" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><IconX className="w-3 h-3" /></button>
+            <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><IconX className="w-3 h-3" /></button>
+          )}
+        </div>
+        <PasscodeGate role={role} onUnlock={unlock} onLock={lock} />
+      </div>
+
+      <div className="max-w-3xl mx-auto p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-slate-500 font-data uppercase tracking-wide">{filtered.length} distribution centers</p>
+          {role === 'deposito' && (
+            <Link href="/mapa?addChurch=1" className="flex items-center gap-1.5 bg-navy text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-[var(--navy-700)] transition-colors">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+              Add center
+            </Link>
           )}
         </div>
 
-        <select
-          value={parish}
-          onChange={e => setParish(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value={ALL_OPTION}>Todas las parroquias</option>
-          {parishOptions.map(p => <option key={p}>{p}</option>)}
-        </select>
-
-        {/* Layers multi-select dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setLayersOpen(o => !o)}
-            className="flex items-center gap-2 border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] transition-colors"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-500">
-              <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84zM2 12l8.58 3.91a2 2 0 0 0 1.66 0L22 12M2 17l8.58 3.91a2 2 0 0 0 1.66 0L22 17" />
-            </svg>
-            <span className="font-medium text-slate-700">Capas</span>
-            <span className="font-data text-xs bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">{activeLayers}/3</span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`w-3.5 h-3.5 text-slate-400 transition-transform ${layersOpen ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </button>
-
-          {layersOpen && (
-            <>
-              <div className="fixed inset-0 z-[1200]" onClick={() => setLayersOpen(false)} />
-              <div className="absolute left-0 top-full mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-200 p-1.5 z-[1300]">
-                <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mostrar en el mapa</div>
-                {layerMeta.map(({ key, label, color, count }) => {
-                  const on = layers[key]
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => setLayers(l => ({ ...l, [key]: !l[key] }))}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors text-left"
-                    >
-                      <span className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${on ? 'border-transparent' : 'border-slate-300'}`} style={on ? { background: color } : undefined}>
-                        {on && <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" className="w-3 h-3"><path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+        {loading ? (
+          <p className="text-sm text-slate-400">Loading…</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-slate-400 bg-white border border-slate-200 rounded-lg px-4 py-6 text-center">No results.</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {filtered.map(church => {
+              const projects = centerProjects[church.id] || []
+              const last = lastDelivery[church.id]
+              const pendingInfo = pendingRequests[church.id]
+              return (
+                <Link
+                  key={church.id}
+                  href={`/mapa?center=${church.id}`}
+                  className="bg-white rounded-xl border border-slate-200 p-4 hover:border-slate-300 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h2 className="font-bold text-slate-800 text-sm leading-tight">{church.name}</h2>
+                    {pendingInfo && (
+                      <span className={`flex-shrink-0 text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full whitespace-nowrap ${pendingInfo.urgent ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {pendingInfo.count} request{pendingInfo.count !== 1 ? 's' : ''}
                       </span>
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
-                      <span className={`text-sm flex-1 ${on ? 'text-slate-800 font-medium' : 'text-slate-400'}`}>{label}</span>
-                      <span className="font-data text-xs text-slate-400">{count}</span>
-                    </button>
-                  )
-                })}
-                <div className="flex gap-1 px-1.5 pt-1.5 mt-1 border-t border-slate-100">
-                  <button onClick={() => setLayers({ churches: true, distribution: true, hospital: true })} className="flex-1 text-xs py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">Todas</button>
-                  <button onClick={() => setLayers({ churches: false, distribution: false, hospital: false })} className="flex-1 text-xs py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition-colors">Ninguna</button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={showRoutes}
-            onChange={e => setShowRoutes(e.target.checked)}
-            className="w-4 h-4"
-            style={{ accentColor: 'var(--olive)' }}
-          />
-          <span className="text-slate-700">Mostrar rutas</span>
-        </label>
-
-        <button
-          onClick={handleStartExportPreview}
-          title="Vista previa y exportación del mapa actual en PDF"
-          className="flex items-center gap-1.5 border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white hover:border-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--olive)] transition-colors"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-500">
-            <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-          </svg>
-          <span className="font-medium text-slate-700 hidden sm:inline">Exportar PDF</span>
-        </button>
-
-        {editMode && (
-          <button
-            onClick={openAddChurch}
-            className="ml-auto flex items-center gap-1.5 bg-navy text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-[var(--navy-700)] transition-colors"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-            Agregar iglesia
-          </button>
+                    )}
+                  </div>
+                  {church.pastor_name && (
+                    <p className="flex items-center gap-1 text-xs text-slate-500 mb-2"><IconUser className="w-3 h-3" /> {church.pastor_name} · {church.parish}</p>
+                  )}
+                  <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                    {ALL_PROJECTS.map(project => {
+                      const on = projects.includes(project)
+                      return (
+                        <span
+                          key={project}
+                          className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${on ? 'text-white' : 'bg-slate-100 text-slate-400'}`}
+                          style={on ? { background: PROJECT_COLORS[project] } : undefined}
+                        >
+                          {PROJECT_LABELS[project]}
+                        </span>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-slate-400 font-data">
+                    {last ? `Last delivery: ${formatRelativeDate(last)}` : 'No deliveries recorded'}
+                  </p>
+                </Link>
+              )
+            })}
+          </div>
         )}
       </div>
-
-      {/* Export preview controls (not part of the captured area) */}
-      {exportPreviewMode && (
-        <div className="bg-navy text-white px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 shadow-lg flex-shrink-0">
-          <div className="min-w-0">
-            <div className="font-semibold text-xs sm:text-sm whitespace-nowrap">Vista previa de exportación</div>
-            <div className="text-white/60 text-[11px] hidden sm:block">Esto es exactamente lo que se guardará como PDF. Mueve o haz zoom en el mapa y luego haz clic en Descargar PDF.</div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={handleCancelExportPreview} disabled={exporting} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-50">
-              Cancelar
-            </button>
-            <button onClick={handleConfirmExportPdf} disabled={exporting} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium bg-olive hover:bg-[var(--olive-600)] transition-colors whitespace-nowrap disabled:opacity-50">
-              {exporting ? 'Generando…' : 'Descargar PDF'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Export capture area: this header + the map are what gets saved to the PDF */}
-      <div ref={exportAreaRef} className="flex flex-col flex-1 overflow-hidden">
-        <div className={`items-center gap-2.5 px-3 py-2 border-b border-gray-200 flex-shrink-0 ${exportPreviewMode ? 'flex' : 'hidden'}`}>
-          <img src="/logosp.jpg" alt="Samaritan's Purse" className="w-8 h-8 rounded-full object-cover" />
-          <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-bold leading-tight font-sans-pro text-navy">Red de Distribución La Guaira</h1>
-            <p className="text-gray-500 text-[10px] uppercase tracking-wide">Samaritan&apos;s Purse</p>
-          </div>
-          <div className="text-[10px] text-gray-500 text-right flex-shrink-0">
-            <div>Parroquia: {parish === ALL_OPTION ? 'Todas' : parish} · Capas: {activeLayerLabels} · Rutas: {showRoutes ? 'Sí' : 'No'}</div>
-            <div>Generado el {exportTime}</div>
-          </div>
-        </div>
-
-        {/* Main content */}
-        <div className="flex flex-1 overflow-hidden relative">
-        {/* Map */}
-        <div className="flex-1 relative">
-          {loading && allChurches.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-20">
-              <div className="text-gray-500 text-sm">Cargando mapa...</div>
-            </div>
-          ) : (
-            <>
-              {settingLocationFor && (
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-1.5 bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
-                  <IconMapPin className="w-4 h-4 flex-shrink-0" /> Haz clic en el mapa para ubicar: <strong>{settingLocationFor.name}</strong>
-                  <button onClick={() => setSettingLocationFor(null)} aria-label="Cancelar" className="ml-1 text-yellow-700 hover:text-yellow-900"><IconX className="w-3.5 h-3.5" /></button>
-                </div>
-              )}
-              {pickingForForm && (
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-1.5 bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold shadow-lg max-w-[90%] text-center">
-                  <IconMapPin className="w-4 h-4 flex-shrink-0" /> Toca el mapa para colocar el pin
-                  <button onClick={() => setPickingForForm(false)} aria-label="Cancelar" className="ml-1 text-yellow-700 hover:text-yellow-900"><IconX className="w-3.5 h-3.5" /></button>
-                </div>
-              )}
-              <ChurchMap
-                churches={filtered}
-                allChurches={churches}
-                selected={selected}
-                focusChurch={focusChurch}
-                onSelect={openChurch}
-                onSetLocation={handleSetLocation}
-                settingLocationFor={settingLocationFor}
-                showRoutes={showRoutes}
-                pickingLocation={pickingForForm}
-                onPickLocation={(lat, lng) => { setPickedCoords({ lat, lng }); setPickingForForm(false) }}
-                onMapReady={map => { mapRef.current = map }}
-              />
-              <MapLegend />
-            </>
-          )}
-        </div>
-
-        {/* Sidebar (desktop) / bottom sheet (mobile) */}
-        <div
-          ref={sheetRef}
-          className={`
-            bg-white flex flex-col overflow-hidden print:hidden
-            md:static md:w-72 md:border-l md:shadow-none md:rounded-none md:max-h-none md:translate-y-0
-            fixed inset-x-0 bottom-0 z-[1100] rounded-t-2xl shadow-2xl max-h-[78dvh]
-            transition-transform duration-300 ease-out
-            ${exportPreviewMode ? 'hidden' : ''}
-            ${sheetOpen || selected ? 'translate-y-0' : 'translate-y-[calc(100%-3.25rem)]'}
-          `}
-        >
-          {/* Mobile handle — tap toggles (onClick), drag follows the finger and snaps open/closed */}
-          <button
-            onClick={handleSheetClick}
-            onPointerDown={handleSheetPointerDown}
-            onPointerMove={handleSheetPointerMove}
-            onPointerUp={handleSheetPointerUp}
-            onPointerCancel={handleSheetPointerCancel}
-            className="md:hidden flex flex-col items-center gap-1 py-2 border-b border-gray-100 active:bg-gray-50 touch-none select-none"
-          >
-            <span className="w-10 h-1 rounded-full bg-gray-300" />
-            <span className="text-xs font-semibold text-gray-600">
-              {selected ? selected.name : `${filtered.length} ${filtered.length !== 1 ? 'puntos' : 'punto'} ${sheetOpen ? '▼' : '▲'}`}
-            </span>
-          </button>
-
-          <div className="overflow-y-auto flex-1">
-          {selected && selected.marker_type === 'hospital' ? (
-            <div className="p-4">
-              <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Volver a la lista</button>
-              {selected.image_url && (
-                <img src={selected.image_url} alt={selected.name}
-                  onError={e => { e.currentTarget.style.display = 'none' }}
-                  className="w-full h-44 object-cover rounded-xl mb-3 border border-slate-200" />
-              )}
-              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#80873322] text-[#5f6526] mb-2">
-                <IconHospital className="w-3.5 h-3.5" /> Hospital de Campaña
-              </div>
-              <h2 className="font-bold text-gray-900 text-base mb-1">{selected.name}</h2>
-              <div className="space-y-2 text-sm mt-3">
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parroquia</div>
-                  <div className="text-gray-800">{selected.parish}</div>
-                </div>
-                {selected.notes && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Acerca de</div>
-                    <div className="text-gray-800">{selected.notes}</div>
-                  </div>
-                )}
-                {selected.lat && selected.lng && (
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${selected.lat},${selected.lng}`}
-                    target="_blank" rel="noreferrer"
-                    className="flex items-center justify-center gap-1.5 bg-[#808733] hover:bg-[#6b7029] text-white py-2 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    <IconCompass className="w-4 h-4" /> Abrir en Google Maps
-                  </a>
-                )}
-              </div>
-              {editMode && (
-                <div className="flex gap-2 mt-4">
-                  <button onClick={() => openEditChurch(selected)} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Editar</button>
-                  <button onClick={() => setConfirmDeleteChurch(selected)} className="flex-1 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50">Eliminar</button>
-                </div>
-              )}
-            </div>
-          ) : selected ? (
-            <div className="p-4">
-              <button onClick={() => setSelected(null)} className="text-gray-400 text-sm mb-3 hover:text-gray-600">← Volver a la lista</button>
-              {selected.image_url && (
-                <img src={selected.image_url} alt={selected.name}
-                  onError={e => { e.currentTarget.style.display = 'none' }}
-                  className="w-full h-40 object-cover rounded-xl mb-3 border border-slate-200" />
-              )}
-              <div className="flex gap-2 flex-wrap mb-3">
-                <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${selected.is_distribution_center ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${selected.is_distribution_center ? 'bg-red-600' : 'bg-blue-600'}`} />
-                  {selected.is_distribution_center ? 'Centro de Distribución' : 'Iglesia'}
-                </div>
-                <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${selected.geocode_status === 'validado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                  {selected.geocode_status === 'validado' ? <IconMapPin className="w-3 h-3" /> : <IconClock className="w-3 h-3" />}
-                  {selected.geocode_status === 'validado' ? 'Ubicación validada' : 'Ubicación pendiente'}
-                </div>
-              </div>
-              <h2 className="font-bold text-gray-900 text-base mb-1">{selected.name}</h2>
-              {selected.pastor_name && <p className="flex items-center gap-1.5 text-gray-600 text-sm mb-3"><IconUser className="w-3.5 h-3.5" /> {selected.pastor_name}</p>}
-              <div className="space-y-2 text-sm">
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Parroquia</div>
-                  <div className="text-gray-800">{selected.parish}</div>
-                </div>
-                {!selected.is_distribution_center && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Centro de Distribución</div>
-                    {editMode ? (
-                      <select
-                        value={selected.distribution_center_id || ''}
-                        onChange={e => reassignCenter(selected, e.target.value)}
-                        className="w-full bg-white border border-gray-300 rounded-md px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">— Sin asignar —</option>
-                        {centers.map(c => (
-                          <option key={c.id} value={c.id}>{c.name} ({c.parish})</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div className="text-gray-800">{centers.find(c => c.id === selected.distribution_center_id)?.name || '— Sin asignar —'}</div>
-                    )}
-                  </div>
-                )}
-                {selected.phone && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Teléfono</div>
-                    <a href={`tel:+58${selected.phone}`} className="text-blue-600 hover:underline">+58 {selected.phone}</a>
-                    <a href={`https://wa.me/58${selected.phone}`} target="_blank" rel="noreferrer" className="ml-3 text-green-600 text-xs hover:underline">WhatsApp →</a>
-                  </div>
-                )}
-                {selected.email && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-gray-500 text-xs uppercase font-semibold mb-1">Correo</div>
-                    <a href={`mailto:${selected.email}`} className="text-blue-600 hover:underline break-all">{selected.email}</a>
-                  </div>
-                )}
-              </div>
-
-              {selected.is_distribution_center && (
-                <div className="mt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-gray-500 text-xs uppercase font-semibold">Registro de entregas</div>
-                    {editMode && (
-                      <button
-                        onClick={() => setDistributionFormOpen(true)}
-                        className="text-xs font-medium text-[var(--olive)] hover:underline"
-                      >
-                        + Registrar entrega
-                      </button>
-                    )}
-                  </div>
-                  {distributionsLoading ? (
-                    <div className="text-xs text-gray-400 py-2">Cargando…</div>
-                  ) : distributions.length === 0 ? (
-                    <div className="text-xs text-gray-400 py-2">Aún no hay entregas registradas en este centro.</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {distributions.map(d => (
-                        <div key={d.id} className="bg-gray-50 rounded-lg p-3 text-sm">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="text-gray-800 font-medium">
-                              {new Date(d.distributed_at + 'T00:00:00').toLocaleDateString('es-VE', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </div>
-                            {editMode && (
-                              <button onClick={() => setConfirmDeleteDistribution(d)} aria-label="Eliminar registro" className="text-gray-300 hover:text-red-500 flex-shrink-0"><IconX className="w-3.5 h-3.5" /></button>
-                            )}
-                          </div>
-                          <div className="text-gray-700 text-xs mt-1">{d.items}</div>
-                          {d.families_served != null && (
-                            <div className="flex items-center gap-1 text-gray-500 text-xs mt-1"><IconUsers className="w-3.5 h-3.5" /> {d.families_served} familias atendidas</div>
-                          )}
-                          {d.notes && <div className="text-gray-400 text-xs mt-1">{d.notes}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {editMode && (
-                <>
-                  <button
-                    onClick={() => toggleDistribution(selected)}
-                    className={`mt-4 w-full py-2 rounded-lg text-sm font-medium transition-colors ${selected.is_distribution_center ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-red-600 text-white hover:bg-red-700'}`}
-                  >
-                    {selected.is_distribution_center ? 'Quitar como centro de distribución' : 'Marcar como centro de distribución'}
-                  </button>
-                  {selected.geocode_status !== 'validado' && (
-                    <button
-                      onClick={() => setSettingLocationFor(selected)}
-                      className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors"
-                    >
-                      <IconMapPin className="w-4 h-4" /> Ubicar manualmente en el mapa
-                    </button>
-                  )}
-                  <div className="flex gap-2 mt-2">
-                    <button onClick={() => openEditChurch(selected)} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Editar</button>
-                    <button onClick={() => setConfirmDeleteChurch(selected)} className="flex-1 py-2 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50">Eliminar</button>
-                  </div>
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="divide-y">
-              <div className="p-3 text-xs text-gray-500 uppercase font-semibold bg-gray-50">
-                {filtered.length} {filtered.length !== 1 ? 'puntos' : 'punto'}{search ? ` — "${search}"` : ''}
-              </div>
-              {filtered.map(church => (
-                <button
-                  key={church.id}
-                  onClick={() => openChurch(church)}
-                  className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors"
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="mt-1.5 flex-shrink-0">
-                      {church.marker_type === 'hospital' ? (
-                        <IconHospital className="w-3.5 h-3.5 text-[#808733]" />
-                      ) : (
-                        <span className={`block w-2 h-2 rounded-full ${church.is_distribution_center ? 'bg-red-600' : 'bg-blue-600'}`} />
-                      )}
-                    </span>
-                    <div>
-                      <div className="text-sm font-medium text-gray-900 leading-tight">{church.name}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {church.marker_type === 'hospital' ? 'Samaritan’s Purse' : (church.pastor_name || '—')}
-                      </div>
-                      <div className="text-xs text-gray-400">{church.parish}</div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-          </div>
-        </div>
-        </div>
-      </div>
-
-      {/* Passcode modal */}
-      {passcodeModalOpen && (
-        <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
-          <form ref={passcodeModalRef} onSubmit={submitPasscode} className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
-            <h3 className="font-bold text-gray-900 mb-1">Modo edición</h3>
-            <p className="text-xs text-gray-500 mb-3">Ingresa la clave para agregar, editar o eliminar iglesias.</p>
-            <input
-              type="password"
-              autoFocus
-              value={passcodeInput}
-              onChange={e => { setPasscodeInput(e.target.value); setPasscodeError(false) }}
-              className={`w-full border rounded-lg px-3 py-2 text-sm mb-1 focus:outline-none focus:ring-2 focus:ring-[var(--olive)] ${passcodeError ? 'border-red-400' : 'border-gray-300'}`}
-              placeholder="Clave"
-            />
-            {passcodeError && <p className="text-xs text-red-600 mb-2">Clave incorrecta</p>}
-            <div className="flex gap-2 mt-3">
-              <button type="button" onClick={() => { setPasscodeModalOpen(false); setPasscodeInput(''); setPasscodeError(false) }} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
-              <button type="submit" disabled={verifying} className="flex-1 py-2 rounded-lg bg-navy text-white text-sm font-medium hover:bg-[var(--navy-700)] disabled:opacity-50">{verifying ? 'Verificando…' : 'Desbloquear'}</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Delete confirmation */}
-      {confirmDeleteChurch && (
-        <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
-          <div ref={confirmDeleteChurchRef} className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
-            <h3 className="font-bold text-gray-900 mb-1">¿Eliminar iglesia?</h3>
-            <p className="text-sm text-gray-600 mb-4">Esto eliminará permanentemente a <strong>{confirmDeleteChurch.name}</strong> y sus rutas del mapa.</p>
-            <div className="flex gap-2">
-              <button onClick={() => setConfirmDeleteChurch(null)} disabled={deleting} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancelar</button>
-              <button onClick={handleDeleteConfirmed} disabled={deleting} className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50">{deleting ? 'Eliminando…' : 'Eliminar'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add/Edit church form */}
-      {formOpen && (
-        <ChurchForm
-          church={formChurch}
-          centers={centers}
-          parishes={parishOptions}
-          onClose={closeForm}
-          onSaved={() => {
-            showToast(formChurch ? 'Iglesia actualizada' : 'Iglesia creada')
-            setFormOpen(false); setFormChurch(null); setPickingForForm(false); setPickedCoords(null); fetchChurches()
-          }}
-          pickingLocation={pickingForForm}
-          onStartPickLocation={() => { setSettingLocationFor(null); setPickingForForm(true) }}
-          onCancelPickLocation={() => setPickingForForm(false)}
-          pendingCoords={pickedCoords}
-        />
-      )}
-
-      {/* Register a distribution event */}
-      {distributionFormOpen && selected && (
-        <DistributionForm
-          center={selected}
-          onClose={() => setDistributionFormOpen(false)}
-          onSaved={() => { showToast('Entrega registrada'); setDistributionFormOpen(false); fetchDistributions(selected.id) }}
-        />
-      )}
-
-      {/* Delete distribution confirmation */}
-      {confirmDeleteDistribution && (
-        <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/40 p-4">
-          <div ref={confirmDeleteDistributionRef} className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-xs">
-            <h3 className="font-bold text-gray-900 mb-1">¿Eliminar este registro?</h3>
-            <p className="text-sm text-gray-600 mb-4">Se eliminará permanentemente esta entrega del historial.</p>
-            <div className="flex gap-2">
-              <button onClick={() => setConfirmDeleteDistribution(null)} disabled={deletingDistribution} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancelar</button>
-              <button onClick={handleDeleteDistributionConfirmed} disabled={deletingDistribution} className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50">{deletingDistribution ? 'Eliminando…' : 'Eliminar'}</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

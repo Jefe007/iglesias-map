@@ -14,7 +14,7 @@ type FormState = {
   parish: string
   address: string
   notes: string
-  marker_type: 'church' | 'hospital'
+  marker_type: Church['marker_type']
   is_distribution_center: boolean
   distribution_center_id: string
   lat: string
@@ -150,14 +150,14 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
       <div className="absolute inset-0 bg-black/40" onClick={!saving ? onClose : undefined} />
       <div ref={modalRef} className="relative bg-white w-full md:w-[420px] max-h-[88dvh] md:max-h-none md:h-full rounded-t-2xl md:rounded-none shadow-2xl flex flex-col overflow-hidden">
         <div className="bg-navy text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
-          <h2 className="font-bold font-sans-pro">{church ? 'Editar iglesia' : 'Agregar iglesia'}</h2>
-          <button onClick={onClose} disabled={saving} aria-label="Cerrar" className="text-white/70 hover:text-white"><IconX className="w-4 h-4" /></button>
+          <h2 className="font-bold font-sans-pro">{church ? 'Edit church' : 'Add church'}</h2>
+          <button onClick={onClose} disabled={saving} aria-label="Close" className="text-white/70 hover:text-white"><IconX className="w-4 h-4" /></button>
         </div>
 
         {pickingLocation ? (
           <div className="p-5 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 text-sm text-slate-600"><IconMapPin className="w-4 h-4 flex-shrink-0" /> Toca el mapa para colocar el pin.</div>
-            <button onClick={onCancelPickLocation} className="text-xs font-medium text-slate-500 hover:text-slate-800 whitespace-nowrap">Cancelar</button>
+            <div className="flex items-center gap-1.5 text-sm text-slate-600"><IconMapPin className="w-4 h-4 flex-shrink-0" /> Tap the map to place the pin.</div>
+            <button onClick={onCancelPickLocation} className="text-xs font-medium text-slate-500 hover:text-slate-800 whitespace-nowrap">Cancel</button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
@@ -166,64 +166,67 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
                 <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
               )}
 
-              <Field label="Nombre *">
-                <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={inputClass} placeholder="Nombre de la iglesia" />
+              <Field label="Name *">
+                <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={inputClass} placeholder="Name" />
               </Field>
 
-              <Field label="Tipo">
-                <select value={form.marker_type} onChange={e => setForm(f => ({ ...f, marker_type: e.target.value as 'church' | 'hospital' }))} className={inputClass}>
-                  <option value="church">Iglesia</option>
-                  <option value="hospital">Hospital de campaña</option>
+              <Field label="Type">
+                <select value={form.marker_type} onChange={e => setForm(f => ({ ...f, marker_type: e.target.value as Church['marker_type'] }))} className={inputClass}>
+                  <option value="church">Church</option>
+                  <option value="hospital">Field hospital</option>
+                  <option value="base">Base</option>
+                  <option value="deposito">Warehouse</option>
+                  <option value="desalinizador">Water desalination plant</option>
                 </select>
               </Field>
 
-              <Field label="Parroquia">
+              <Field label="Parish">
                 <input
                   required
                   list="parish-options"
                   value={form.parish}
                   onChange={e => setForm(f => ({ ...f, parish: e.target.value }))}
                   className={inputClass}
-                  placeholder="Escribe o elige una parroquia"
+                  placeholder="Type or choose a parish"
                 />
                 <datalist id="parish-options">
                   {parishes.map(p => <option key={p} value={p} />)}
                 </datalist>
               </Field>
 
-              <Field label="Nombre del pastor">
+              <Field label="Pastor's name">
                 <input value={form.pastor_name} onChange={e => setForm(f => ({ ...f, pastor_name: e.target.value }))} className={inputClass} />
               </Field>
 
-              <Field label="Teléfono">
-                <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className={inputClass} placeholder="Ej: 4141234567" />
+              <Field label="Phone">
+                <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className={inputClass} placeholder="e.g. 4141234567" />
               </Field>
 
-              <Field label="Correo">
+              <Field label="Email">
                 <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={inputClass} />
               </Field>
 
-              <Field label="Dirección">
+              <Field label="Address">
                 <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className={inputClass} />
               </Field>
 
-              <Field label="Notas">
+              <Field label="Notes">
                 <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className={inputClass} rows={3} />
               </Field>
 
-              <Field label="Foto">
+              <Field label="Photo">
                 <div className="flex items-center gap-3">
                   {(previewUrl || form.image_url) && (
                     <img src={previewUrl || form.image_url} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200" />
                   )}
                   <label className={`cursor-pointer text-sm font-medium hover:underline ${uploading ? 'text-gray-400' : 'text-[var(--olive)]'}`}>
-                    {uploading ? 'Subiendo…' : (form.image_url ? 'Reemplazar foto' : 'Subir foto')}
+                    {uploading ? 'Uploading…' : (form.image_url ? 'Replace photo' : 'Upload photo')}
                     <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFile} disabled={uploading} />
                   </label>
                 </div>
               </Field>
 
-              <Field label="Ubicación">
+              <Field label="Location">
                 <div className="flex gap-2">
                   <input
                     type="number" step="any"
@@ -239,11 +242,11 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
                   />
                 </div>
                 <button type="button" onClick={onStartPickLocation} className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium bg-yellow-400 text-yellow-900 hover:bg-yellow-500 transition-colors">
-                  <IconMapPin className="w-4 h-4" /> Elegir en el mapa
+                  <IconMapPin className="w-4 h-4" /> Choose on map
                 </button>
               </Field>
 
-              <Field label="Rol">
+              <Field label="Role">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -252,14 +255,14 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
                     className="w-4 h-4"
                     style={{ accentColor: 'var(--olive)' }}
                   />
-                  <span className="text-sm text-gray-700">Centro de distribución</span>
+                  <span className="text-sm text-gray-700">Distribution center</span>
                 </label>
               </Field>
 
               {!form.is_distribution_center && (
-                <Field label="Centro de distribución asignado">
+                <Field label="Assigned distribution center">
                   <select value={form.distribution_center_id} onChange={e => setForm(f => ({ ...f, distribution_center_id: e.target.value }))} className={inputClass}>
-                    <option value="">— Sin asignar —</option>
+                    <option value="">— Unassigned —</option>
                     {availableCenters.map(c => <option key={c.id} value={c.id}>{c.name} ({c.parish})</option>)}
                   </select>
                 </Field>
@@ -268,10 +271,10 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
 
             <div className="border-t p-4 flex gap-2 flex-shrink-0">
               <button type="button" onClick={onClose} disabled={saving} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                Cancelar
+                Cancel
               </button>
               <button type="submit" disabled={saving || uploading} className="flex-1 py-2 rounded-lg bg-navy text-white text-sm font-medium hover:bg-[var(--navy-700)] transition-colors disabled:opacity-50">
-                {saving ? 'Guardando…' : (church ? 'Guardar cambios' : 'Crear iglesia')}
+                {saving ? 'Saving…' : (church ? 'Save changes' : 'Create church')}
               </button>
             </div>
           </form>

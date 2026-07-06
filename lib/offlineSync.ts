@@ -23,7 +23,15 @@ async function resolvePendingPhoto(payload: Record<string, unknown> | undefined,
 async function replay(m: MutationRecord): Promise<void> {
   const payload = await resolvePendingPhoto(m.payload, m.passcode)
   const headers = { 'x-edit-passcode': m.passcode, 'Content-Type': 'application/json' }
-  const url = m.kind === 'church' ? '/api/churches' : '/api/distributions'
+  const urls: Record<MutationRecord['kind'], string> = {
+    church: '/api/churches',
+    distribution: '/api/distributions',
+    item: '/api/items',
+    center_projects: '/api/center-projects',
+    request: '/api/requests',
+    driver: '/api/drivers',
+  }
+  const url = urls[m.kind]
 
   const res = await (
     m.op === 'create' ? fetch(url, { method: 'POST', headers, body: JSON.stringify({ ...payload, id: m.id }) }) :
@@ -33,7 +41,7 @@ async function replay(m: MutationRecord): Promise<void> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.error || `No se pudo sincronizar ${m.kind} ${m.op}`)
+    throw new Error(body.error || `Could not sync ${m.kind} ${m.op}`)
   }
 }
 
@@ -55,7 +63,7 @@ export async function flushQueue(): Promise<{ synced: number; failed: number }> 
       if (err instanceof TypeError) break // still offline — retry on next reconnect
       await db.delete('mutations', next.seq!)
       failed++
-      console.error('No se pudo sincronizar un cambio pendiente, se descarta:', next, err)
+      console.error('Could not sync a pending change, discarding:', next, err)
     }
   }
   return { synced, failed }
