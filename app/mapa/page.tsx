@@ -15,7 +15,7 @@ import MapLegend from '@/components/MapLegend'
 import DriversPanel from '@/components/DriversPanel'
 import NavMenu from '@/components/NavMenu'
 import { useFocusTrap } from '@/lib/useFocusTrap'
-import { isSpecialLocation, LOCATION_LABELS, LOCATION_COLORS } from '@/lib/locationTypes'
+import { isSpecialLocation, LOCATION_LABELS, LOCATION_COLORS, MARKER_TYPE_LABELS } from '@/lib/locationTypes'
 
 const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false })
 const ChurchForm = dynamic(() => import('@/components/ChurchForm'), { ssr: false })
@@ -637,7 +637,7 @@ function MapaPageInner() {
             className="ml-auto flex items-center gap-1.5 bg-navy text-white rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-[var(--navy-700)] transition-colors"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-            Add church
+            Add point
           </button>
         )}
       </div>
@@ -1096,8 +1096,8 @@ function MapaPageInner() {
           centers={centers}
           parishes={parishOptions}
           onClose={closeForm}
-          onSaved={() => {
-            showToast(formChurch ? 'Church updated' : 'Church created')
+          onSaved={saved => {
+            showToast(`${MARKER_TYPE_LABELS[saved.marker_type]} ${formChurch ? 'updated' : 'created'}`)
             setFormOpen(false); setFormChurch(null); setPickingForForm(false); setPickedCoords(null); fetchChurches()
           }}
           pickingLocation={pickingForForm}

@@ -5,6 +5,7 @@ import type { Church } from '@/lib/supabase'
 import { createChurch, updateChurch, uploadPhoto } from '@/lib/api'
 import { IconX, IconMapPin } from '@/lib/icons'
 import { useFocusTrap } from '@/lib/useFocusTrap'
+import { MARKER_TYPE_LABELS } from '@/lib/locationTypes'
 
 type FormState = {
   name: string
@@ -65,7 +66,7 @@ interface Props {
   centers: Church[]
   parishes: string[]
   onClose: () => void
-  onSaved: () => void
+  onSaved: (saved: Church) => void
   pickingLocation: boolean
   onStartPickLocation: () => void
   onCancelPickLocation: () => void
@@ -110,6 +111,8 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
     }
   }
 
+  const isChurch = form.marker_type === 'church'
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) return
@@ -118,26 +121,25 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
     try {
       const fields = {
         name: form.name.trim(),
-        pastor_name: form.pastor_name.trim() || null,
+        // Pastor/email/distribution-center role only apply to churches — force
+        // them clear for other point types regardless of stale hidden state
+        // (e.g. typed before switching Type away from Church).
+        pastor_name: isChurch ? (form.pastor_name.trim() || null) : null,
         phone: form.phone.trim() || null,
-        email: form.email.trim() || null,
+        email: isChurch ? (form.email.trim() || null) : null,
         parish: form.parish,
         address: form.address.trim() || null,
         notes: form.notes.trim() || null,
         marker_type: form.marker_type,
-        is_distribution_center: form.is_distribution_center,
-        distribution_center_id: form.is_distribution_center ? null : (form.distribution_center_id || null),
+        is_distribution_center: isChurch && form.is_distribution_center,
+        distribution_center_id: isChurch && !form.is_distribution_center ? (form.distribution_center_id || null) : null,
         lat: form.lat ? Number(form.lat) : null,
         lng: form.lng ? Number(form.lng) : null,
         geocode_status: (form.lat && form.lng ? 'validado' : (church?.geocode_status ?? 'pendiente')) as Church['geocode_status'],
         image_url: form.image_url || null,
       }
-      if (church) {
-        await updateChurch(church.id, fields)
-      } else {
-        await createChurch(fields)
-      }
-      onSaved()
+      const saved = church ? await updateChurch(church.id, fields) : await createChurch(fields)
+      onSaved(saved)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -146,11 +148,19 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
   }
 
   return (
-    <div className="fixed inset-0 z-[1400] flex items-end md:items-stretch md:justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={!saving ? onClose : undefined} />
-      <div ref={modalRef} className="relative bg-white w-full md:w-[420px] max-h-[88dvh] md:max-h-none md:h-full rounded-t-2xl md:rounded-none shadow-2xl flex flex-col overflow-hidden">
+    <div className={`fixed inset-0 z-[1400] flex items-end md:items-stretch md:justify-end ${pickingLocation ? 'pointer-events-none' : ''}`}>
+      {/* Hidden (not just transparent) while picking a location: this backdrop
+          otherwise sits on top of the map and swallows the tap meant for it,
+          calling onClose instead of ever reaching Leaflet's click handler.
+          Removing the backdrop alone isn't enough — this whole wrapper is a
+          fullscreen `fixed inset-0` box, so it still captures every click
+          within its area regardless of what's rendered inside it; the
+          pointer-events-none above (and -auto below, to keep the visible bar
+          itself clickable) is what actually lets clicks reach the map. */}
+      {!pickingLocation && <div className="absolute inset-0 bg-black/40" onClick={!saving ? onClose : undefined} />}
+      <div ref={modalRef} className={`relative bg-white w-full md:w-[420px] max-h-[88dvh] md:max-h-none md:h-full rounded-t-2xl md:rounded-none shadow-2xl flex flex-col overflow-hidden ${pickingLocation ? 'pointer-events-auto' : ''}`}>
         <div className="bg-navy text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
-          <h2 className="font-bold font-sans-pro">{church ? 'Edit church' : 'Add church'}</h2>
+          <h2 className="font-bold font-sans-pro">{church ? 'Edit' : 'Add'} {MARKER_TYPE_LABELS[form.marker_type]}</h2>
           <button onClick={onClose} disabled={saving} aria-label="Close" className="text-white/70 hover:text-white"><IconX className="w-4 h-4" /></button>
         </div>
 
@@ -194,17 +204,21 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
                 </datalist>
               </Field>
 
-              <Field label="Pastor's name">
-                <input value={form.pastor_name} onChange={e => setForm(f => ({ ...f, pastor_name: e.target.value }))} className={inputClass} />
-              </Field>
+              {isChurch && (
+                <Field label="Pastor's name">
+                  <input value={form.pastor_name} onChange={e => setForm(f => ({ ...f, pastor_name: e.target.value }))} className={inputClass} />
+                </Field>
+              )}
 
               <Field label="Phone">
                 <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className={inputClass} placeholder="e.g. 4141234567" />
               </Field>
 
-              <Field label="Email">
-                <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={inputClass} />
-              </Field>
+              {isChurch && (
+                <Field label="Email">
+                  <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={inputClass} />
+                </Field>
+              )}
 
               <Field label="Address">
                 <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className={inputClass} />
@@ -246,20 +260,22 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
                 </button>
               </Field>
 
-              <Field label="Role">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={form.is_distribution_center}
-                    onChange={e => setForm(f => ({ ...f, is_distribution_center: e.target.checked }))}
-                    className="w-4 h-4"
-                    style={{ accentColor: 'var(--olive)' }}
-                  />
-                  <span className="text-sm text-gray-700">Distribution center</span>
-                </label>
-              </Field>
+              {isChurch && (
+                <Field label="Role">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={form.is_distribution_center}
+                      onChange={e => setForm(f => ({ ...f, is_distribution_center: e.target.checked }))}
+                      className="w-4 h-4"
+                      style={{ accentColor: 'var(--olive)' }}
+                    />
+                    <span className="text-sm text-gray-700">Distribution center</span>
+                  </label>
+                </Field>
+              )}
 
-              {!form.is_distribution_center && (
+              {isChurch && !form.is_distribution_center && (
                 <Field label="Assigned distribution center">
                   <select value={form.distribution_center_id} onChange={e => setForm(f => ({ ...f, distribution_center_id: e.target.value }))} className={inputClass}>
                     <option value="">— Unassigned —</option>
@@ -274,7 +290,7 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
                 Cancel
               </button>
               <button type="submit" disabled={saving || uploading} className="flex-1 py-2 rounded-lg bg-navy text-white text-sm font-medium hover:bg-[var(--navy-700)] transition-colors disabled:opacity-50">
-                {saving ? 'Saving…' : (church ? 'Save changes' : 'Create church')}
+                {saving ? 'Saving…' : (church ? 'Save changes' : `Create ${MARKER_TYPE_LABELS[form.marker_type]}`)}
               </button>
             </div>
           </form>

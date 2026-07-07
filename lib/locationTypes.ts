@@ -12,6 +12,14 @@ export const LOCATION_LABELS: Record<SpecialLocationType, string> = {
   desalinizador: 'Water Desalination Plant',
 }
 
+// All marker types, not just the "special" ones — used wherever the church
+// add/edit form needs to label or title itself by whatever type is selected.
+export const MARKER_TYPE_LABELS: Record<Church['marker_type'], string> = {
+  church: 'Church',
+  hospital: 'Field Hospital',
+  ...LOCATION_LABELS,
+}
+
 // The desalination plant intentionally shares its tone with the Water project's default color (#0891b2).
 export const LOCATION_COLORS: Record<SpecialLocationType, string> = {
   base: '#1b2a4a',
