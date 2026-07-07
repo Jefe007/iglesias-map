@@ -85,7 +85,10 @@ function makeBaseIcon(isSelected: boolean) {
 // with a colored, type-specific fallback glyph when there's no photo yet or it fails to load.
 const LOCATION_GLYPHS: Record<SpecialLocationType, string> = {
   base: `<rect x='47' y='20' width='4' height='60' rx='1'/><path d='M51 22 L78 32 L51 42 Z'/>`,
-  deposito: `<rect x='25' y='42' width='50' height='34' rx='2'/><rect x='30' y='28' width='40' height='16' rx='2'/>`,
+  // An open cardboard box: a body with two flaps splayed open at the top —
+  // reads clearly as "storage/warehouse" as a bold silhouette even at marker
+  // size, unlike a plain stacked-rectangle shape which looked ambiguous.
+  deposito: `<rect x='26' y='46' width='48' height='32' rx='3'/><path d='M26 46 L14 24 L42 46 Z'/><path d='M74 46 L86 24 L58 46 Z'/>`,
   desalinizador: `<path d='M50 16 C66 34 78 48 78 60 A32 32 0 0 1 22 60 C22 48 34 34 50 16 Z'/>`,
 }
 
