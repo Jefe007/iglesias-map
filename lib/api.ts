@@ -6,35 +6,54 @@ const ROLE_KEY = 'sp-map-edit-role'
 
 export type Role = 'supervision' | 'deposito'
 
-export function getStoredPasscode(): string | null {
+// localStorage (no sessionStorage): la clave debe sobrevivir a cerrar la app para
+// que el modo edición siga funcionando en campo sin señal. El servidor revalida la
+// clave en cada mutación al sincronizar, así que una clave inválida nunca escribe.
+function readStored(key: string): string | null {
   if (typeof window === 'undefined') return null
-  return sessionStorage.getItem(PASSCODE_KEY)
+  const value = localStorage.getItem(key)
+  if (value !== null) return value
+  // Migración: sesiones desbloqueadas antes de este cambio vivían en sessionStorage.
+  const legacy = sessionStorage.getItem(key)
+  if (legacy !== null) localStorage.setItem(key, legacy)
+  return legacy
+}
+
+export function getStoredPasscode(): string | null {
+  return readStored(PASSCODE_KEY)
 }
 
 export function setStoredPasscode(passcode: string) {
-  sessionStorage.setItem(PASSCODE_KEY, passcode)
+  localStorage.setItem(PASSCODE_KEY, passcode)
 }
 
 export function clearStoredPasscode() {
+  localStorage.removeItem(PASSCODE_KEY)
+  localStorage.removeItem(ROLE_KEY)
   sessionStorage.removeItem(PASSCODE_KEY)
   sessionStorage.removeItem(ROLE_KEY)
 }
 
 // Depósito/Admin es superconjunto de Supervisión (ver lib/serverAuth.ts#roleForPasscode).
 export function getStoredRole(): Role | null {
-  if (typeof window === 'undefined') return null
-  return sessionStorage.getItem(ROLE_KEY) as Role | null
+  return readStored(ROLE_KEY) as Role | null
 }
 
 export async function verifyPasscode(passcode: string): Promise<boolean> {
-  const res = await fetch('/api/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ passcode }),
-  })
-  const { ok, role } = await res.json()
-  if (ok && role) sessionStorage.setItem(ROLE_KEY, role)
-  return ok
+  try {
+    const res = await fetch('/api/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode }),
+    })
+    const { ok, role } = await res.json()
+    if (ok && role) localStorage.setItem(ROLE_KEY, role)
+    return ok
+  } catch (err) {
+    if (!isNetworkFailure(err)) throw err
+    // Sin red: aceptar solo una clave ya verificada online antes en este dispositivo.
+    return passcode === getStoredPasscode() && getStoredRole() !== null
+  }
 }
 
 function authHeaders(): HeadersInit {

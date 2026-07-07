@@ -1037,7 +1037,13 @@ function MapaPageInner() {
               className={`w-full border rounded-lg px-3 py-2 text-sm mb-1 focus:outline-none focus:ring-2 focus:ring-[var(--olive)] ${passcodeError ? 'border-red-400' : 'border-gray-300'}`}
               placeholder="Passcode"
             />
-            {passcodeError && <p className="text-xs text-red-600 mb-2">Incorrect passcode</p>}
+            {passcodeError && (
+              <p className="text-xs text-red-600 mb-2">
+                {typeof navigator !== 'undefined' && !navigator.onLine
+                  ? 'No connection — verify this passcode online once first.'
+                  : 'Incorrect passcode'}
+              </p>
+            )}
             <div className="flex gap-2 mt-3">
               <button type="button" onClick={() => { setPasscodeModalOpen(false); setPasscodeInput(''); setPasscodeError(false) }} className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
               <button type="submit" disabled={verifying} className="flex-1 py-2 rounded-lg bg-navy text-white text-sm font-medium hover:bg-[var(--navy-700)] disabled:opacity-50">{verifying ? 'Verifying…' : 'Unlock'}</button>

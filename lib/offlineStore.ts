@@ -2,6 +2,17 @@ import { supabase } from './supabase'
 import type { Church, Distribution, DistributionItem, Driver, Item, Project, ServiceRequest } from './supabase'
 import { getDb, type MutationRecord } from './offlineDb'
 
+// "Offline" en campo casi nunca es un rechazo limpio: una señal débil deja la
+// petición colgada durante decenas de segundos antes de fallar, y el fallback a
+// IndexedDB (el catch de cada lectura) solo se dispara cuando el fetch termina.
+// Abortar a los 8s convierte "pantalla colgada en Loading…" en "datos locales".
+function readTimeoutSignal(ms = 8000): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms)
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), ms)
+  return controller.signal
+}
+
 function applyMutations<T extends { id: string }>(base: T[], mutations: MutationRecord[], kind: MutationRecord['kind']): T[] {
   const byId = new Map(base.map(row => [row.id, row]))
   const ordered = mutations.filter(m => m.kind === kind).sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
@@ -21,7 +32,7 @@ export async function getChurches(): Promise<{ data: Church[]; offline: boolean 
   let base: Church[] = []
   let offline = false
   try {
-    const { data, error } = await supabase.from('churches').select('*').order('parish').order('name')
+    const { data, error } = await supabase.from('churches').select('*').order('parish').order('name').abortSignal(readTimeoutSignal())
     if (error) throw error
     base = data || []
     if (db) {
@@ -47,6 +58,7 @@ export async function getAllDistributions(): Promise<{ data: Distribution[]; off
       .from('distributions')
       .select('*')
       .order('distributed_at', { ascending: false })
+      .abortSignal(readTimeoutSignal())
     if (error) throw error
     base = data || []
     if (db) {
@@ -81,7 +93,7 @@ export async function getAllDistributionItems(): Promise<{ data: DistributionIte
   let base: DistributionItem[] = []
   let offline = false
   try {
-    const { data, error } = await supabase.from('distribution_items').select('*')
+    const { data, error } = await supabase.from('distribution_items').select('*').abortSignal(readTimeoutSignal())
     if (error) throw error
     base = data || []
     if (db) {
@@ -102,7 +114,7 @@ export async function getItems(): Promise<{ data: Item[]; offline: boolean }> {
   let base: Item[] = []
   let offline = false
   try {
-    const { data, error } = await supabase.from('items').select('*').order('project').order('name')
+    const { data, error } = await supabase.from('items').select('*').order('project').order('name').abortSignal(readTimeoutSignal())
     if (error) throw error
     base = data || []
     if (db) {
@@ -128,7 +140,7 @@ export async function getCenterProjects(): Promise<{ data: Record<string, Projec
   let rows: { church_id: string; project: Project }[] = []
   let offline = false
   try {
-    const { data, error } = await supabase.from('center_projects').select('church_id, project')
+    const { data, error } = await supabase.from('center_projects').select('church_id, project').abortSignal(readTimeoutSignal())
     if (error) throw error
     rows = data || []
     if (db) {
@@ -154,7 +166,7 @@ export async function getRequests(): Promise<{ data: ServiceRequest[]; offline: 
   let base: ServiceRequest[] = []
   let offline = false
   try {
-    const { data, error } = await supabase.from('requests').select('*').order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('requests').select('*').order('created_at', { ascending: false }).abortSignal(readTimeoutSignal())
     if (error) throw error
     base = data || []
     if (db) {
@@ -176,7 +188,7 @@ export async function getDrivers(): Promise<{ data: Driver[]; offline: boolean }
   let base: Driver[] = []
   let offline = false
   try {
-    const { data, error } = await supabase.from('drivers').select('*').order('name')
+    const { data, error } = await supabase.from('drivers').select('*').order('name').abortSignal(readTimeoutSignal())
     if (error) throw error
     base = data || []
     if (db) {

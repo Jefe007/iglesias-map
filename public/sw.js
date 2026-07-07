@@ -1,4 +1,4 @@
-const VERSION = 'v3'
+const VERSION = 'v4'
 const PAGES_CACHE = `sp-map-pages-${VERSION}`
 const STATIC_CACHE = `sp-map-static-${VERSION}`
 const TILES_CACHE = `sp-map-tiles-${VERSION}`
@@ -27,14 +27,19 @@ function tileCacheKey(rawUrl) {
 }
 
 // Proactively warm the tile cache for the whole La Guaira coastal strip (where
-// every church/center in this dataset actually is) at a few zoom levels, so
-// the base map still renders somewhere recognizable offline even if the user
-// never happened to pan across a given spot before losing signal. Kept to
-// moderate zooms (~70 tiles, a couple MB) so it's cheap on a slow connection —
-// deep zoom on a specific church still depends on having viewed it before.
+// every church/center in this dataset actually is), down to street-level zoom
+// (~500 tiles, ~10 MB). Deliberately NOT part of install: a single hung tile
+// fetch there would block SW activation entirely. Instead it runs in the
+// background every time the app opens online, triggered by a 'precache-tiles'
+// message from RegisterSW, resuming wherever it left off.
 const REGION = { minLat: 10.55, maxLat: 10.65, minLng: -67.10, maxLng: -66.70 }
-const PRECACHE_ZOOMS = [11, 12, 13]
+const FULL_ZOOMS = [11, 12, 13, 14, 15]
 const TILE_SUBDOMAINS = ['a', 'b', 'c']
+
+// The app's own routes and shell assets, precached at install so every page
+// (and the installed-PWA chrome) works offline even if never visited before.
+const APP_ROUTES = ['/', '/mapa', '/solicitudes', '/choferes', '/catalogo', '/metricas', '/dashboard', '/debug']
+const SHELL_ASSETS = ['/logosp.jpg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/manifest.webmanifest']
 
 function lonToTileX(lon, z) {
   return Math.floor(((lon + 180) / 360) * 2 ** z)
@@ -44,33 +49,94 @@ function latToTileY(lat, z) {
   return Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * 2 ** z)
 }
 
-async function precacheRegionTiles() {
+async function precacheRegionTiles(zooms) {
   const cache = await caches.open(TILES_CACHE)
-  let i = 0
-  for (const z of PRECACHE_ZOOMS) {
+  const pending = []
+  for (const z of zooms) {
     const xMin = lonToTileX(REGION.minLng, z)
     const xMax = lonToTileX(REGION.maxLng, z)
     const yMin = latToTileY(REGION.maxLat, z)
     const yMax = latToTileY(REGION.minLat, z)
     for (let x = xMin; x <= xMax; x++) {
-      for (let y = yMin; y <= yMax; y++) {
-        const key = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`
-        try {
-          if (await cache.match(key)) { i++; continue }
-          const sub = TILE_SUBDOMAINS[i++ % TILE_SUBDOMAINS.length]
-          const response = await fetch(`https://${sub}.tile.openstreetmap.org/${z}/${x}/${y}.png`)
-          if (response && response.ok) await cache.put(key, response)
-        } catch {
-          // Best-effort: a flaky tile during install shouldn't block the rest.
-        }
-      }
+      for (let y = yMin; y <= yMax; y++) pending.push({ z, x, y })
     }
+  }
+  let i = 0
+  // Small batches: parallel enough to finish in reasonable time, gentle enough
+  // for a weak connection (and for the OSM tile servers). Each fetch gets its
+  // own timeout so one hung request can never stall the whole warm-up.
+  const BATCH = 5
+  for (let start = 0; start < pending.length; start += BATCH) {
+    await Promise.all(pending.slice(start, start + BATCH).map(async ({ z, x, y }) => {
+      const key = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`
+      try {
+        if (await cache.match(key)) return
+        const sub = TILE_SUBDOMAINS[i++ % TILE_SUBDOMAINS.length]
+        const response = await withTimeout(fetch(`https://${sub}.tile.openstreetmap.org/${z}/${x}/${y}.png`), 10000)
+        if (response && response.ok) await cache.put(key, response)
+      } catch {
+        // Best-effort: a flaky tile shouldn't block the rest.
+      }
+    }))
+  }
+}
+
+// Individual adds (not atomic addAll), each with its own timeout: one failed
+// or hung request must not abort — or indefinitely stall — install/warm-up.
+function addToCache(cache, url, init) {
+  return withTimeout(fetch(url, init), 10000)
+    .then(res => { if (res && res.ok) return cache.put(url, res) })
+    .catch(() => {})
+}
+
+async function precacheAppShell() {
+  const pages = await caches.open(PAGES_CACHE)
+  const statics = await caches.open(STATIC_CACHE)
+  await Promise.all([
+    ...APP_ROUTES.map(route => addToCache(pages, route)),
+    // Also the RSC payload of each route (same normalized key as the fetch
+    // handler below), so in-app navigations work offline even to pages the
+    // user never opened online.
+    ...APP_ROUTES.map(route => addToCache(pages, `${route}?_rsc=1`, { headers: { RSC: '1' } })),
+    ...SHELL_ASSETS.map(asset => addToCache(statics, asset)),
+  ])
+}
+
+// Precaching each route's HTML isn't enough offline: the JS/CSS chunks it
+// needs (including dynamic imports like Leaflet, which appear in no page's
+// HTML) live under content-hashed /_next/static/ URLs. The build writes the
+// full list to /precache-manifest.json (see scripts/build-precache-manifest.mjs);
+// download whatever is missing and drop chunks from older builds.
+async function precacheBuildAssets() {
+  let manifest
+  try {
+    const res = await withTimeout(fetch('/precache-manifest.json'), 10000)
+    if (!res || !res.ok) return
+    manifest = await res.json()
+  } catch { return } // dev server or offline: nothing to do
+  const cache = await caches.open(STATIC_CACHE)
+  const wanted = new Set(manifest.map(u => new URL(u, self.location.origin).href))
+  const cached = new Set((await cache.keys()).map(req => req.url))
+  const missing = manifest.filter(u => !cached.has(new URL(u, self.location.origin).href))
+  const BATCH = 5
+  for (let start = 0; start < missing.length; start += BATCH) {
+    await Promise.all(missing.slice(start, start + BATCH).map(u => addToCache(cache, u)))
+  }
+  for (const url of cached) {
+    if (url.includes('/_next/static/') && !wanted.has(url)) await cache.delete(url)
   }
 }
 
 self.addEventListener('install', event => {
   self.skipWaiting()
-  event.waitUntil(precacheRegionTiles())
+  event.waitUntil(precacheAppShell())
+})
+
+// Triggered by RegisterSW on every online app open; resumes wherever it left off.
+self.addEventListener('message', event => {
+  if (event.data === 'precache-tiles') {
+    event.waitUntil(Promise.all([precacheBuildAssets(), precacheRegionTiles(FULL_ZOOMS)]))
+  }
 })
 
 self.addEventListener('activate', event => {
@@ -106,14 +172,15 @@ function withTimeout(promise, ms) {
   })
 }
 
-async function networkFirst(request, cacheName) {
+async function networkFirst(request, cacheName, { cacheKey } = {}) {
   const cache = await caches.open(cacheName)
+  const key = cacheKey || request
   try {
     const response = await withTimeout(fetch(request), 4000)
-    if (response && response.ok) cache.put(request, response.clone())
+    if (response && response.ok) cache.put(key, response.clone())
     return response
   } catch (err) {
-    const cached = await cache.match(request)
+    const cached = await cache.match(key)
     if (cached) return cached
     if (request.mode === 'navigate') {
       const fallback = await cache.match('/')
@@ -159,6 +226,15 @@ self.addEventListener('fetch', event => {
   if (url.origin === self.location.origin) {
     if (request.mode === 'navigate') {
       event.respondWith(networkFirst(request, PAGES_CACHE))
+      return
+    }
+    // Next.js client-side navigations don't fetch HTML — they fetch RSC payloads
+    // (?_rsc=<router-state-hash>). Cache them under a normalized key (the _rsc
+    // value varies per navigation; a fixed one avoids fragmenting the cache and
+    // colliding with the plain-HTML entry for the same pathname) so in-app
+    // navigation keeps working offline for every page.
+    if (url.searchParams.has('_rsc') || request.headers.get('RSC') === '1') {
+      event.respondWith(networkFirst(request, PAGES_CACHE, { cacheKey: `${url.origin}${url.pathname}?_rsc=1` }))
       return
     }
     if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icon-') || url.pathname === '/logosp.jpg') {
