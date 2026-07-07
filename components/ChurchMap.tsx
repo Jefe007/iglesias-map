@@ -303,6 +303,22 @@ async function fetchOsrmRoute(from: [number, number], to: [number, number]) {
   return { geometry, distanceKm: route.distance / 1000, durationMin: Math.round(route.duration / 60) }
 }
 
+// Only rendered for points with real (not parish-scattered) coordinates — a
+// Google Maps link to a fallback position would send someone to the wrong place.
+function GoogleMapsLink({ church }: { church: Church }) {
+  if (!church.lat || !church.lng) return null
+  return (
+    <a
+      href={`https://www.google.com/maps/search/?api=1&query=${church.lat},${church.lng}`}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-1 mt-1.5 text-[#1a73e8] text-xs font-medium hover:underline"
+    >
+      <IconMapPin className="w-3.5 h-3.5" /> Open in Google Maps
+    </a>
+  )
+}
+
 interface Props {
   churches: Church[]
   allChurches?: Church[]
@@ -460,6 +476,7 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
                       <button onClick={() => requestRoute(church)} className="flex items-center gap-1 mt-2 text-navy text-xs font-medium hover:underline">
                         <IconCompass className="w-3.5 h-3.5" /> Get directions
                       </button>
+                      <GoogleMapsLink church={church} />
                     </>
                   ) : isSpecialLocation(church.marker_type) ? (
                     <>
@@ -475,6 +492,7 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
                       <button onClick={() => requestRoute(church)} className="flex items-center gap-1 mt-2 text-navy text-xs font-medium hover:underline">
                         <IconCompass className="w-3.5 h-3.5" /> Get directions
                       </button>
+                      <GoogleMapsLink church={church} />
                     </>
                   ) : (
                     <>
@@ -499,6 +517,7 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
                       <button onClick={() => requestRoute(church)} className="flex items-center gap-1 mt-2 text-navy text-xs font-medium hover:underline">
                         <IconCompass className="w-3.5 h-3.5" /> Get directions
                       </button>
+                      <GoogleMapsLink church={church} />
                     </>
                   )}
                 </div>

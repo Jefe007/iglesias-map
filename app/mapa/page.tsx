@@ -895,6 +895,15 @@ function MapaPageInner() {
                     <a href={`mailto:${selected.email}`} className="text-blue-600 hover:underline break-all">{selected.email}</a>
                   </div>
                 )}
+                {selected.lat && selected.lng && (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${selected.lat},${selected.lng}`}
+                    target="_blank" rel="noreferrer"
+                    className="flex items-center justify-center gap-1.5 bg-[#1a73e8] hover:bg-[#1765cc] text-white py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <IconCompass className="w-4 h-4" /> Open in Google Maps
+                  </a>
+                )}
               </div>
 
               {selected.is_distribution_center && (
