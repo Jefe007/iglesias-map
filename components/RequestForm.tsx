@@ -1,14 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import type { Church, Item, Project, Urgency } from '@/lib/supabase'
-import { PROJECT_LABELS } from '@/lib/supabase'
+import type { Church, Item, Project, ProjectDef, Urgency } from '@/lib/supabase'
 import { createRequest } from '@/lib/api'
-import { getItems } from '@/lib/offlineStore'
+import { getItems, getProjects } from '@/lib/offlineStore'
 import { IconX } from '@/lib/icons'
 import { useFocusTrap } from '@/lib/useFocusTrap'
-
-const PROJECTS: Project[] = ['water', 'food', 'nfi']
 
 interface Props {
   centers: Church[]
@@ -19,16 +16,24 @@ interface Props {
 
 export default function RequestForm({ centers, defaultCenterId, onClose, onSaved }: Props) {
   const [churchId, setChurchId] = useState(defaultCenterId || '')
-  const [project, setProject] = useState<Project>('water')
+  const [project, setProject] = useState<Project>('')
   const [itemId, setItemId] = useState('')
   const [quantity, setQuantity] = useState('')
   const [urgency, setUrgency] = useState<Urgency>('normal')
   const [note, setNote] = useState('')
   const [items, setItems] = useState<Item[]>([])
+  const [projects, setProjects] = useState<ProjectDef[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { getItems().then(({ data }) => setItems(data.filter(i => i.active))) }, [])
+  useEffect(() => {
+    getProjects().then(({ data }) => {
+      const active = data.filter(p => p.active)
+      setProjects(active)
+      setProject(prev => prev || active[0]?.key || '')
+    })
+  }, [])
 
   const handleEscape = useCallback(() => { if (!saving) onClose() }, [saving, onClose])
   const modalRef = useFocusTrap<HTMLDivElement>(handleEscape)
@@ -81,8 +86,8 @@ export default function RequestForm({ centers, defaultCenterId, onClose, onSaved
             <div className="flex gap-2">
               <label className="block flex-1">
                 <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Project</div>
-                <select value={project} onChange={e => { setProject(e.target.value as Project); setItemId('') }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--olive)]">
-                  {PROJECTS.map(p => <option key={p} value={p}>{PROJECT_LABELS[p]}</option>)}
+                <select value={project} onChange={e => { setProject(e.target.value); setItemId('') }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--olive)]">
+                  {projects.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
                 </select>
               </label>
               <label className="block flex-1">

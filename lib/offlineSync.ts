@@ -30,6 +30,7 @@ async function replay(m: MutationRecord): Promise<void> {
     center_projects: '/api/center-projects',
     request: '/api/requests',
     driver: '/api/drivers',
+    project: '/api/projects',
   }
   const url = urls[m.kind]
 

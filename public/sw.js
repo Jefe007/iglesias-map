@@ -1,4 +1,4 @@
-const VERSION = 'v4'
+const VERSION = 'v5'
 const PAGES_CACHE = `sp-map-pages-${VERSION}`
 const STATIC_CACHE = `sp-map-static-${VERSION}`
 const TILES_CACHE = `sp-map-tiles-${VERSION}`
@@ -27,14 +27,26 @@ function tileCacheKey(rawUrl) {
 }
 
 // Proactively warm the tile cache for the whole La Guaira coastal strip (where
-// every church/center in this dataset actually is), down to street-level zoom
-// (~500 tiles, ~10 MB). Deliberately NOT part of install: a single hung tile
-// fetch there would block SW activation entirely. Instead it runs in the
-// background every time the app opens online, triggered by a 'precache-tiles'
-// message from RegisterSW, resuming wherever it left off.
+// most churches/centers in this dataset are), down to zoom 15 (~500 tiles,
+// ~10 MB). Deliberately NOT part of install: a single hung tile fetch there
+// would block SW activation entirely. Instead it runs in the background every
+// time the app opens online, triggered by a 'precache-tiles' message from
+// RegisterSW, resuming wherever it left off.
 const REGION = { minLat: 10.55, maxLat: 10.65, minLng: -67.10, maxLng: -66.70 }
 const FULL_ZOOMS = [11, 12, 13, 14, 15]
 const TILE_SUBDOMAINS = ['a', 'b', 'c']
+
+// The region sweep above stops at 15, but selecting a church flies the map to
+// zoom 16 (see FlyToSelected in ChurchMap.tsx) — one zoom level deeper than
+// anything cached, so the basemap went blank on every zoom-in once offline.
+// Blanket-covering the whole region at 16 would ~4x the download (see the
+// tile-count math this was sized against), so instead cache a small
+// neighborhood around each REAL church coordinate — covers the zoom-in case
+// and, as a bonus, gives at least some coverage to parishes outside REGION
+// entirely (e.g. Caracas, Morón), which otherwise had zero cached tiles at
+// any zoom. Triggered separately once app/mapa/page.tsx has church data.
+const POINT_ZOOMS = [14, 15, 16]
+const POINT_RADIUS = 1 // 3x3 tiles per point per zoom
 
 // The app's own routes and shell assets, precached at install so every page
 // (and the installed-PWA chrome) works offline even if never visited before.
@@ -49,22 +61,18 @@ function latToTileY(lat, z) {
   return Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * 2 ** z)
 }
 
-async function precacheRegionTiles(zooms) {
-  const cache = await caches.open(TILES_CACHE)
-  const pending = []
-  for (const z of zooms) {
-    const xMin = lonToTileX(REGION.minLng, z)
-    const xMax = lonToTileX(REGION.maxLng, z)
-    const yMin = latToTileY(REGION.maxLat, z)
-    const yMax = latToTileY(REGION.minLat, z)
-    for (let x = xMin; x <= xMax; x++) {
-      for (let y = yMin; y <= yMax; y++) pending.push({ z, x, y })
-    }
-  }
+async function notifyClients(msg) {
+  const clients = await self.clients.matchAll()
+  clients.forEach(c => c.postMessage(msg))
+}
+
+// Shared batched-download core for both the region sweep and the per-point
+// warm-up. Small batches: parallel enough to finish in reasonable time,
+// gentle enough for a weak connection (and for the OSM tile servers). Each
+// fetch gets its own timeout so one hung request can never stall the rest,
+// and progress is reported after every batch so the UI can show a live "%".
+async function downloadTiles(cache, pending, progressLabel) {
   let i = 0
-  // Small batches: parallel enough to finish in reasonable time, gentle enough
-  // for a weak connection (and for the OSM tile servers). Each fetch gets its
-  // own timeout so one hung request can never stall the whole warm-up.
   const BATCH = 5
   for (let start = 0; start < pending.length; start += BATCH) {
     await Promise.all(pending.slice(start, start + BATCH).map(async ({ z, x, y }) => {
@@ -78,7 +86,48 @@ async function precacheRegionTiles(zooms) {
         // Best-effort: a flaky tile shouldn't block the rest.
       }
     }))
+    if (progressLabel) {
+      await notifyClients({ type: 'tile-progress', label: progressLabel, done: Math.min(start + BATCH, pending.length), total: pending.length })
+    }
   }
+}
+
+async function precacheRegionTiles(zooms) {
+  const cache = await caches.open(TILES_CACHE)
+  const pending = []
+  for (const z of zooms) {
+    const xMin = lonToTileX(REGION.minLng, z)
+    const xMax = lonToTileX(REGION.maxLng, z)
+    const yMin = latToTileY(REGION.maxLat, z)
+    const yMax = latToTileY(REGION.minLat, z)
+    for (let x = xMin; x <= xMax; x++) {
+      for (let y = yMin; y <= yMax; y++) pending.push({ z, x, y })
+    }
+  }
+  await downloadTiles(cache, pending, 'region')
+}
+
+async function precachePointTiles(points) {
+  const cache = await caches.open(TILES_CACHE)
+  const pending = []
+  const seen = new Set()
+  for (const { lat, lng } of points) {
+    if (typeof lat !== 'number' || typeof lng !== 'number') continue
+    for (const z of POINT_ZOOMS) {
+      const cx = lonToTileX(lng, z)
+      const cy = latToTileY(lat, z)
+      for (let dx = -POINT_RADIUS; dx <= POINT_RADIUS; dx++) {
+        for (let dy = -POINT_RADIUS; dy <= POINT_RADIUS; dy++) {
+          const x = cx + dx, y = cy + dy
+          const id = `${z}/${x}/${y}`
+          if (seen.has(id)) continue
+          seen.add(id)
+          pending.push({ z, x, y })
+        }
+      }
+    }
+  }
+  await downloadTiles(cache, pending, 'points')
 }
 
 // Individual adds (not atomic addAll), each with its own timeout: one failed
@@ -136,6 +185,11 @@ self.addEventListener('install', event => {
 self.addEventListener('message', event => {
   if (event.data === 'precache-tiles') {
     event.waitUntil(Promise.all([precacheBuildAssets(), precacheRegionTiles(FULL_ZOOMS)]))
+  }
+  // Sent separately by app/mapa/page.tsx once real church coordinates are
+  // loaded (the SW has no data access of its own) — see POINT_ZOOMS above.
+  if (event.data && event.data.type === 'precache-points' && Array.isArray(event.data.points)) {
+    event.waitUntil(precachePointTiles(event.data.points))
   }
 })
 

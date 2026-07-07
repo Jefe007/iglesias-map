@@ -1,10 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import type { Church, Item, Project } from '@/lib/supabase'
-import { PROJECT_LABELS } from '@/lib/supabase'
+import type { Church, Item, Project, ProjectDef } from '@/lib/supabase'
 import { createDistribution } from '@/lib/api'
-import { getItems } from '@/lib/offlineStore'
+import { getItems, getProjects } from '@/lib/offlineStore'
 import { IconX } from '@/lib/icons'
 import { useFocusTrap } from '@/lib/useFocusTrap'
 
@@ -26,14 +25,22 @@ interface Props {
 
 export default function DistributionForm({ center, onClose, onSaved }: Props) {
   const [distributedAt, setDistributedAt] = useState(todayIso())
-  const [lines, setLines] = useState<Line[]>([emptyLine('water')])
+  const [lines, setLines] = useState<Line[]>([emptyLine('')])
   const [familiesServed, setFamiliesServed] = useState('')
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState<Item[]>([])
+  const [projects, setProjects] = useState<ProjectDef[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { getItems().then(({ data }) => setItems(data.filter(i => i.active))) }, [])
+  useEffect(() => {
+    getProjects().then(({ data }) => {
+      const active = data.filter(p => p.active)
+      setProjects(active)
+      setLines(prev => prev.length === 1 && !prev[0].project && active[0] ? [emptyLine(active[0].key)] : prev)
+    })
+  }, [])
 
   const handleEscape = useCallback(() => { if (!saving) onClose() }, [saving, onClose])
   const modalRef = useFocusTrap<HTMLDivElement>(handleEscape)
@@ -41,7 +48,7 @@ export default function DistributionForm({ center, onClose, onSaved }: Props) {
   const updateLine = (index: number, patch: Partial<Line>) => {
     setLines(prev => prev.map((l, i) => i === index ? { ...l, ...patch } : l))
   }
-  const addLine = () => setLines(prev => [...prev, emptyLine(prev[prev.length - 1]?.project || 'water')])
+  const addLine = () => setLines(prev => [...prev, emptyLine(prev[prev.length - 1]?.project || projects[0]?.key || '')])
   const removeLine = (index: number) => setLines(prev => prev.filter((_, i) => i !== index))
 
   async function handleSubmit(e: React.FormEvent) {
@@ -104,10 +111,10 @@ export default function DistributionForm({ center, onClose, onSaved }: Props) {
                     <div key={i} className="flex items-center gap-1.5">
                       <select
                         value={line.project}
-                        onChange={e => updateLine(i, { project: e.target.value as Project, item_id: '' })}
+                        onChange={e => updateLine(i, { project: e.target.value, item_id: '' })}
                         className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--olive)]"
                       >
-                        {(['water', 'food', 'nfi'] as Project[]).map(p => <option key={p} value={p}>{PROJECT_LABELS[p]}</option>)}
+                        {projects.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
                       </select>
                       <select
                         value={line.item_id}

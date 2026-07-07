@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Church, Item, Project, ServiceRequest, RequestStatus, PROJECT_LABELS, PROJECT_COLORS } from '@/lib/supabase'
-import { getChurches, getItems, getRequests } from '@/lib/offlineStore'
+import { Church, Item, Project, ProjectDef, ServiceRequest, RequestStatus, projectMap } from '@/lib/supabase'
+import { getChurches, getItems, getRequests, getProjects } from '@/lib/offlineStore'
 import { updateRequestStatus } from '@/lib/api'
 import { useEditRole } from '@/lib/useEditRole'
 import { showToast } from '@/lib/toast'
@@ -11,7 +11,6 @@ import PasscodeGate from '@/components/PasscodeGate'
 import RequestForm from '@/components/RequestForm'
 import NavMenu from '@/components/NavMenu'
 
-const PROJECTS: Project[] = ['water', 'food', 'nfi']
 const STATUSES: RequestStatus[] = ['pendiente', 'preparada', 'entregada']
 const STATUS_LABELS: Record<RequestStatus, string> = { pendiente: 'Pending', preparada: 'Prepared', entregada: 'Delivered' }
 const NEXT_STATUS: Record<RequestStatus, RequestStatus | null> = { pendiente: 'preparada', preparada: 'entregada', entregada: null }
@@ -21,6 +20,7 @@ export default function SolicitudesPage() {
   const [requests, setRequests] = useState<ServiceRequest[]>([])
   const [churches, setChurches] = useState<Church[]>([])
   const [items, setItems] = useState<Item[]>([])
+  const [projects, setProjects] = useState<ProjectDef[]>([])
   const [loading, setLoading] = useState(true)
   const [statusTab, setStatusTab] = useState<RequestStatus>('pendiente')
   const [filterCenter, setFilterCenter] = useState('')
@@ -29,6 +29,7 @@ export default function SolicitudesPage() {
   const { role, unlock, lock } = useEditRole()
   const canCreate = role !== null
   const canResolve = role === 'deposito'
+  const projectByKey = projectMap(projects)
 
   const centers = churches.filter(c => c.is_distribution_center)
   const churchName = (id: string) => churches.find(c => c.id === id)?.name || '—'
@@ -36,10 +37,11 @@ export default function SolicitudesPage() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [{ data: reqs }, { data: ch }, { data: it }] = await Promise.all([getRequests(), getChurches(), getItems()])
+    const [{ data: reqs }, { data: ch }, { data: it }, { data: proj }] = await Promise.all([getRequests(), getChurches(), getItems(), getProjects()])
     setRequests(reqs)
     setChurches(ch)
     setItems(it)
+    setProjects(proj)
     setLoading(false)
   }, [])
 
@@ -107,9 +109,9 @@ export default function SolicitudesPage() {
             <option value="">All centers</option>
             {centers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select value={filterProject} onChange={e => setFilterProject(e.target.value as Project | '')} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="">All projects</option>
-            {PROJECTS.map(p => <option key={p} value={p}>{PROJECT_LABELS[p]}</option>)}
+            {projects.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
         </div>
 
@@ -134,7 +136,7 @@ export default function SolicitudesPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: PROJECT_COLORS[r.project] }} />
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: projectByKey[r.project]?.color }} />
                         <span className="font-bold text-sm text-slate-800">{item?.name || 'Item'}</span>
                         {r.quantity_needed != null && <span className="text-xs font-data text-slate-500">{r.quantity_needed} {item?.unit}</span>}
                         {r.urgency === 'urgente' && <span className="text-[10px] font-semibold uppercase bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">Urgent</span>}

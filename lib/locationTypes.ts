@@ -12,7 +12,7 @@ export const LOCATION_LABELS: Record<SpecialLocationType, string> = {
   desalinizador: 'Water Desalination Plant',
 }
 
-// The desalination plant intentionally shares its tone with the Water project (PROJECT_COLORS.water).
+// The desalination plant intentionally shares its tone with the Water project's default color (#0891b2).
 export const LOCATION_COLORS: Record<SpecialLocationType, string> = {
   base: '#1b2a4a',
   deposito: '#64748b',

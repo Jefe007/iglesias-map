@@ -5,9 +5,9 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import type { Map as LeafletMap } from 'leaflet'
-import { Church, Distribution, DistributionItem, Item, Project, PROJECT_LABELS, PROJECT_COLORS } from '@/lib/supabase'
+import { Church, Distribution, DistributionItem, Item, Project, ProjectDef, projectMap } from '@/lib/supabase'
 import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStoredPasscode, deleteDistribution, getStoredRole, setCenterProjects } from '@/lib/api'
-import { getChurches as getChurchesOffline, getDistributionsForCenter, getCenterProjects, getAllDistributionItems, getItems } from '@/lib/offlineStore'
+import { getChurches as getChurchesOffline, getDistributionsForCenter, getCenterProjects, getAllDistributionItems, getItems, getProjects } from '@/lib/offlineStore'
 import { useOfflineStatus } from '@/lib/useOfflineStatus'
 import { showToast } from '@/lib/toast'
 import { IconSearch, IconX, IconMapPin, IconHospital, IconCompass, IconUser, IconUsers, IconClock } from '@/lib/icons'
@@ -23,7 +23,6 @@ const DistributionForm = dynamic(() => import('@/components/DistributionForm'), 
 
 const DEFAULT_PARISHES = ['Naiguata', 'Carayaca', 'Caraballeda', 'Maiquetia', 'La Guaira', 'Catia La Mar', 'Urimare', 'Soublet', 'Caracas']
 const ALL_OPTION = 'All'
-const ALL_PROJECTS: Project[] = ['water', 'food', 'nfi']
 
 type LayerKey = 'churches' | 'distribution' | 'hospital' | 'base' | 'deposito' | 'desalinizador'
 type Layers = Record<LayerKey, boolean>
@@ -87,14 +86,18 @@ function MapaPageInner() {
   const [confirmDeleteDistribution, setConfirmDeleteDistribution] = useState<Distribution | null>(null)
   const [deletingDistribution, setDeletingDistribution] = useState(false)
 
-  const { online, pending, syncing } = useOfflineStatus()
+  const { online, pending, syncing, tileProgress } = useOfflineStatus()
 
   const [centerProjects, setCenterProjectsState] = useState<Record<string, Project[]>>({})
   const [savingProjects, setSavingProjects] = useState(false)
+  const [projects, setProjects] = useState<ProjectDef[]>([])
+  const activeProjects = projects.filter(p => p.active)
+  const projectByKey = projectMap(projects)
   // Starts false (same as the server, with no access to sessionStorage) and is
   // corrected in an effect after mount, to avoid a hydration mismatch.
   const [canManageProjects, setCanManageProjects] = useState(false)
   useEffect(() => { setCanManageProjects(getStoredRole() === 'deposito') }, [])
+  useEffect(() => { getProjects().then(({ data }) => setProjects(data)) }, [])
 
   const fetchChurches = useCallback(async () => {
     setLoading(true)
@@ -102,6 +105,17 @@ function MapaPageInner() {
     setAllChurches(data)
     setLoading(false)
   }, [])
+
+  // Deep-zoom offline tiles (see POINT_ZOOMS in sw.js) are keyed to real
+  // coordinates, which only the client has — the SW can't query Supabase
+  // itself. Send them once per church list change, only when online (a dead
+  // connection would just make every tile fetch fail after its own timeout).
+  useEffect(() => {
+    if (!navigator.onLine || !('serviceWorker' in navigator)) return
+    const points = allChurches.filter(c => c.lat && c.lng).map(c => ({ lat: Number(c.lat), lng: Number(c.lng) }))
+    if (points.length === 0) return
+    navigator.serviceWorker.ready.then(reg => reg.active?.postMessage({ type: 'precache-points', points }))
+  }, [allChurches])
 
   const fetchCenterProjects = useCallback(async () => {
     const { data } = await getCenterProjects()
@@ -464,7 +478,7 @@ function MapaPageInner() {
           <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${!online ? 'bg-red-500/20 text-red-200' : pending > 0 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/10 text-white/50'}`}>
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${!online ? 'bg-red-400' : pending > 0 ? 'bg-amber-300' : 'bg-emerald-400'}`} />
             <span className="hidden sm:inline">
-              {!online ? 'Offline' : syncing ? 'Syncing…' : pending > 0 ? `${pending} pending change${pending !== 1 ? 's' : ''}` : 'Online'}
+              {!online ? 'Offline' : syncing ? 'Syncing…' : pending > 0 ? `${pending} pending change${pending !== 1 ? 's' : ''}` : tileProgress ? `Map: ${Math.round(tileProgress.done / tileProgress.total * 100)}%` : 'Online'}
             </span>
           </div>
           <div className="text-right text-sm hidden sm:block">
@@ -890,17 +904,17 @@ function MapaPageInner() {
                     {savingProjects && <span className="text-[10px] text-slate-400">Saving…</span>}
                   </div>
                   <div className="flex gap-1.5 flex-wrap mb-1">
-                    {ALL_PROJECTS.map(project => {
-                      const on = (centerProjects[selected.id] || []).includes(project)
+                    {activeProjects.map(project => {
+                      const on = (centerProjects[selected.id] || []).includes(project.key)
                       return (
                         <button
-                          key={project}
+                          key={project.key}
                           disabled={!canManageProjects}
-                          onClick={() => toggleCenterProject(selected, project)}
+                          onClick={() => toggleCenterProject(selected, project.key)}
                           className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${on ? 'text-white border-transparent' : 'text-slate-500 border-slate-300 bg-white'} ${!canManageProjects ? 'cursor-default' : 'hover:opacity-90'}`}
-                          style={on ? { background: PROJECT_COLORS[project] } : undefined}
+                          style={on ? { background: project.color } : undefined}
                         >
-                          {PROJECT_LABELS[project]}
+                          {project.label}
                         </button>
                       )
                     })}
@@ -944,7 +958,7 @@ function MapaPageInner() {
                                 const item = itemsCatalog.find(i => i.id === line.item_id)
                                 return (
                                   <span key={line.id} className="inline-flex items-center gap-1 text-[11px] bg-white border border-slate-200 rounded-full px-2 py-0.5 text-slate-700">
-                                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: PROJECT_COLORS[line.project] }} />
+                                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: projectByKey[line.project]?.color }} />
                                     {item?.name || 'Item'} · {line.quantity} {item?.unit}
                                   </span>
                                 )

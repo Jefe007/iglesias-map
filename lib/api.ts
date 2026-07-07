@@ -1,4 +1,4 @@
-import type { Church, Distribution, Driver, Item, Project, RequestStatus, ServiceRequest, Urgency } from './supabase'
+import type { Church, Distribution, Driver, Item, Project, ProjectDef, RequestStatus, ServiceRequest, Urgency } from './supabase'
 import { enqueueMutation, storePendingPhoto } from './offlineDb'
 
 const PASSCODE_KEY = 'sp-map-edit-passcode'
@@ -206,6 +206,32 @@ export async function updateItem(id: string, fields: Partial<Item>): Promise<Ite
     await enqueueMutation({ kind: 'item', op: 'update', id, payload: fields, passcode: getStoredPasscode() || '', createdAt: Date.now() })
     return { id, ...fields } as Item
   }
+}
+
+export type NewProject = { key: string; label: string; color: string; sort_order: number }
+
+// Sin cola offline, como setCenterProjects: crear/editar un proyecto (ej. agregar
+// "Shelters") es una acción de configuración poco frecuente que puede esperar señal.
+export async function createProject(fields: NewProject): Promise<ProjectDef> {
+  const res = await fetch('/api/projects', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+  const body = await res.json()
+  if (!res.ok) throw new Error(body.error || 'Could not create the project')
+  return body.data
+}
+
+export async function updateProject(key: string, fields: Partial<Omit<ProjectDef, 'key'>>): Promise<ProjectDef> {
+  const res = await fetch('/api/projects', {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, ...fields }),
+  })
+  const body = await res.json()
+  if (!res.ok) throw new Error(body.error || 'Could not update the project')
+  return body.data
 }
 
 // A diferencia de las iglesias/entregas, esto no se encola offline: es una acción de

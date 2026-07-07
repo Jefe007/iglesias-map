@@ -2,15 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Church, Project, ServiceRequest, PROJECT_LABELS, PROJECT_COLORS } from '@/lib/supabase'
-import { getChurches, getAllDistributions, getRequests } from '@/lib/offlineStore'
+import { Church, Project, ProjectDef, ServiceRequest } from '@/lib/supabase'
+import { getChurches, getAllDistributions, getRequests, getCenterProjects, getProjects } from '@/lib/offlineStore'
 import { useOfflineStatus } from '@/lib/useOfflineStatus'
 import { useEditRole } from '@/lib/useEditRole'
 import { IconSearch, IconX, IconUser } from '@/lib/icons'
 import PasscodeGate from '@/components/PasscodeGate'
 import NavMenu from '@/components/NavMenu'
-
-const ALL_PROJECTS: Project[] = ['water', 'food', 'nfi']
 
 function formatRelativeDate(dateStr: string): string {
   const days = Math.floor((Date.now() - new Date(dateStr + 'T00:00:00').getTime()) / 86400000)
@@ -24,19 +22,23 @@ function formatRelativeDate(dateStr: string): string {
 export default function InicioPage() {
   const [churches, setChurches] = useState<Church[]>([])
   const [centerProjects, setCenterProjects] = useState<Record<string, Project[]>>({})
+  const [projects, setProjects] = useState<ProjectDef[]>([])
   const [lastDelivery, setLastDelivery] = useState<Record<string, string>>({})
   const [pendingRequests, setPendingRequests] = useState<Record<string, { count: number; urgent: boolean }>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const { online, pending, syncing } = useOfflineStatus()
+  const { online, pending, syncing, tileProgress } = useOfflineStatus()
   const { role, unlock, lock } = useEditRole()
+  const activeProjects = projects.filter(p => p.active)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [{ data: allChurches }, { data: distributions }, { data: requests }] = await Promise.all([
-      getChurches(), getAllDistributions(), getRequests(),
+    const [{ data: allChurches }, { data: distributions }, { data: requests }, { data: cp }, { data: proj }] = await Promise.all([
+      getChurches(), getAllDistributions(), getRequests(), getCenterProjects(), getProjects(),
     ])
     setChurches(allChurches.filter(c => c.is_distribution_center))
+    setCenterProjects(cp)
+    setProjects(proj)
 
     const last: Record<string, string> = {}
     for (const d of distributions) {
@@ -82,7 +84,7 @@ export default function InicioPage() {
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
           <div className={`hidden sm:flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${!online ? 'bg-red-500/20 text-red-200' : pending > 0 ? 'bg-amber-400/20 text-amber-200' : 'bg-white/10 text-white/50'}`}>
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${!online ? 'bg-red-400' : pending > 0 ? 'bg-amber-300' : 'bg-emerald-400'}`} />
-            {!online ? 'Offline' : syncing ? 'Syncing…' : pending > 0 ? `${pending} pending` : 'Online'}
+            {!online ? 'Offline' : syncing ? 'Syncing…' : pending > 0 ? `${pending} pending` : tileProgress ? `Map: ${Math.round(tileProgress.done / tileProgress.total * 100)}%` : 'Online'}
           </div>
           <Link href="/mapa" className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Map</Link>
           <Link href="/choferes" className="hidden sm:inline-block bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">Drivers</Link>
@@ -129,7 +131,7 @@ export default function InicioPage() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {filtered.map(church => {
-              const projects = centerProjects[church.id] || []
+              const churchProjectKeys = centerProjects[church.id] || []
               const last = lastDelivery[church.id]
               const pendingInfo = pendingRequests[church.id]
               return (
@@ -150,15 +152,15 @@ export default function InicioPage() {
                     <p className="flex items-center gap-1 text-xs text-slate-500 mb-2"><IconUser className="w-3 h-3" /> {church.pastor_name} · {church.parish}</p>
                   )}
                   <div className="flex items-center gap-1.5 flex-wrap mb-2">
-                    {ALL_PROJECTS.map(project => {
-                      const on = projects.includes(project)
+                    {activeProjects.map(project => {
+                      const on = churchProjectKeys.includes(project.key)
                       return (
                         <span
-                          key={project}
+                          key={project.key}
                           className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${on ? 'text-white' : 'bg-slate-100 text-slate-400'}`}
-                          style={on ? { background: PROJECT_COLORS[project] } : undefined}
+                          style={on ? { background: project.color } : undefined}
                         >
-                          {PROJECT_LABELS[project]}
+                          {project.label}
                         </span>
                       )
                     })}

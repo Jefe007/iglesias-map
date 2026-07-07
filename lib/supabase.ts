@@ -5,13 +5,30 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-export type Project = 'water' | 'food' | 'nfi'
+// A free-form key referencing projects.key (see ProjectDef below) — not a fixed
+// union anymore. Water/food/nfi are just the seeded rows; Depósito/Admin can add
+// more (e.g. "shelters") from the Catálogo page.
+export type Project = string
 export type Unit = 'litros' | 'kg' | 'unidades' | 'cajas' | 'paquetes'
 export type Urgency = 'normal' | 'urgente'
 export type RequestStatus = 'pendiente' | 'preparada' | 'entregada'
 
-export const PROJECT_LABELS: Record<Project, string> = { water: 'Water', food: 'Food', nfi: 'NFI' }
-export const PROJECT_COLORS: Record<Project, string> = { water: '#0891b2', food: '#ea580c', nfi: '#7c3aed' }
+export type ProjectDef = {
+  key: string
+  label: string
+  color: string
+  sort_order: number
+  active: boolean
+  created_at: string
+}
+
+// Small, distinct palette offered when creating a new project — avoids navy
+// (reserved for brand chrome) and stays visually distinct from existing colors.
+export const PROJECT_COLOR_PALETTE = ['#0891b2', '#ea580c', '#7c3aed', '#16a34a', '#db2777', '#ca8a04', '#4f46e5', '#0d9488']
+
+export function projectMap(projects: ProjectDef[]): Record<string, ProjectDef> {
+  return Object.fromEntries(projects.map(p => [p.key, p]))
+}
 
 export type Church = {
   id: string

@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Church, Distribution, DistributionItem, Driver, Item, Project, ServiceRequest } from './supabase'
+import type { Church, Distribution, DistributionItem, Driver, Item, Project, ProjectDef, ServiceRequest } from './supabase'
 import { getDb, type MutationRecord } from './offlineDb'
 
 // "Offline" en campo casi nunca es un rechazo limpio: una señal débil deja la
@@ -129,6 +129,30 @@ export async function getItems(): Promise<{ data: Item[]; offline: boolean }> {
   }
   const mutations = db ? await db.getAll('mutations') : []
   return { data: applyMutations(base, mutations, 'item'), offline }
+}
+
+// Al igual que getCenterProjects, sin capa de mutaciones pendientes: crear o editar un
+// proyecto (ver lib/api.ts#createProject) es una acción de configuración poco frecuente,
+// no algo que el equipo de campo necesite hacer sin señal.
+export async function getProjects(): Promise<{ data: ProjectDef[]; offline: boolean }> {
+  const db = await getDb()
+  let base: ProjectDef[] = []
+  let offline = false
+  try {
+    const { data, error } = await supabase.from('projects').select('*').order('sort_order').abortSignal(readTimeoutSignal())
+    if (error) throw error
+    base = data || []
+    if (db) {
+      const tx = db.transaction('projects', 'readwrite')
+      await tx.store.clear()
+      await Promise.all(base.map(row => tx.store.put(row)))
+      await tx.done
+    }
+  } catch {
+    offline = true
+    base = db ? await db.getAll('projects') : []
+  }
+  return { data: base, offline }
 }
 
 // A diferencia de churches/distributions, los cambios de proyectos activos por centro

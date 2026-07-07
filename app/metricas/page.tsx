@@ -6,14 +6,12 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend,
 } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
-import { Church, DistributionItem, Distribution, Item, Project, PROJECT_LABELS, PROJECT_COLORS } from '@/lib/supabase'
-import { getChurches, getAllDistributions, getAllDistributionItems, getItems } from '@/lib/offlineStore'
+import { Church, DistributionItem, Distribution, Item, Project, ProjectDef, projectMap } from '@/lib/supabase'
+import { getChurches, getAllDistributions, getAllDistributionItems, getItems, getProjects } from '@/lib/offlineStore'
 import { showToast } from '@/lib/toast'
 import NavMenu from '@/components/NavMenu'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
-
-const PROJECTS: Project[] = ['water', 'food', 'nfi']
 
 type JoinedLine = {
   centerId: string
@@ -42,10 +40,10 @@ function monthLabel(yyyyMm: string): string {
   return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
-function downloadCsv(rows: TableRow[], filename: string) {
+function downloadCsv(rows: TableRow[], filename: string, projectByKey: Record<string, ProjectDef>) {
   const header = ['Center', 'Project', 'Item', 'Quantity', 'Unit', 'Last Delivery']
   const lines = rows.map(r => [
-    r.centerName, PROJECT_LABELS[r.project], r.itemName, String(r.total), r.unit, r.lastDelivery,
+    r.centerName, projectByKey[r.project]?.label || r.project, r.itemName, String(r.total), r.unit, r.lastDelivery,
   ].map(v => `"${v.replace(/"/g, '""')}"`).join(','))
   const csv = [header.join(','), ...lines].join('\n')
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -60,6 +58,7 @@ function downloadCsv(rows: TableRow[], filename: string) {
 export default function MetricasPage() {
   const [churches, setChurches] = useState<Church[]>([])
   const [items, setItems] = useState<Item[]>([])
+  const [projects, setProjects] = useState<ProjectDef[]>([])
   const [distributions, setDistributions] = useState<Distribution[]>([])
   const [lines, setLines] = useState<DistributionItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -71,16 +70,18 @@ export default function MetricasPage() {
   const [dateTo, setDateTo] = useState('')
 
   const captureRef = useRef<HTMLDivElement | null>(null)
+  const projectByKey = projectMap(projects)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [{ data: ch }, { data: dist }, { data: dLines }, { data: it }] = await Promise.all([
-      getChurches(), getAllDistributions(), getAllDistributionItems(), getItems(),
+    const [{ data: ch }, { data: dist }, { data: dLines }, { data: it }, { data: proj }] = await Promise.all([
+      getChurches(), getAllDistributions(), getAllDistributionItems(), getItems(), getProjects(),
     ])
     setChurches(ch.filter(c => c.is_distribution_center))
     setDistributions(dist)
     setLines(dLines)
     setItems(it)
+    setProjects(proj)
     setLoading(false)
   }, [])
 
@@ -145,23 +146,23 @@ export default function MetricasPage() {
   // un mismo proyecto mezcla unidades distintas (ej. Food tiene kg y litros a la vez),
   // así que un total sumado sería engañoso. Esto muestra actividad/frecuencia real.
   const chartData = useMemo(() => {
-    const byMonth = new Map<string, Record<Project, number>>()
+    const byMonth = new Map<string, Record<string, number>>()
     for (const l of filtered) {
       const month = l.distributedAt.slice(0, 7)
-      const entry = byMonth.get(month) || { water: 0, food: 0, nfi: 0 }
-      entry[l.project]++
+      const entry = byMonth.get(month) || {}
+      entry[l.project] = (entry[l.project] || 0) + 1
       byMonth.set(month, entry)
     }
     const months = Array.from(byMonth.keys()).sort()
     return {
       labels: months.map(monthLabel),
-      datasets: PROJECTS.map(project => ({
-        label: PROJECT_LABELS[project],
-        data: months.map(m => byMonth.get(m)![project]),
-        backgroundColor: PROJECT_COLORS[project],
+      datasets: projects.map(project => ({
+        label: project.label,
+        data: months.map(m => byMonth.get(m)?.[project.key] || 0),
+        backgroundColor: project.color,
       })),
     }
-  }, [filtered])
+  }, [filtered, projects])
 
   const handleExportPdf = async () => {
     const node = captureRef.current
@@ -187,7 +188,7 @@ export default function MetricasPage() {
 
   const handleExportCsv = () => {
     if (tableRows.length === 0) { showToast('No data to export', 'error'); return }
-    downloadCsv(tableRows, 'metricas-la-guaira.csv')
+    downloadCsv(tableRows, 'metricas-la-guaira.csv', projectByKey)
     showToast('Excel/CSV downloaded')
   }
 
@@ -215,9 +216,9 @@ export default function MetricasPage() {
             <option value="">All centers</option>
             {centers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select value={filterProject} onChange={e => setFilterProject(e.target.value as Project | '')} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="">All projects</option>
-            {PROJECTS.map(p => <option key={p} value={p}>{PROJECT_LABELS[p]}</option>)}
+            {projects.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
           <label className="flex items-center gap-1.5 text-xs text-slate-500">
             From
@@ -274,8 +275,8 @@ export default function MetricasPage() {
                           <td className="px-4 py-2 text-slate-700">{row.centerName}</td>
                           <td className="px-4 py-2">
                             <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
-                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: PROJECT_COLORS[row.project] }} />
-                              {PROJECT_LABELS[row.project]}
+                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: projectByKey[row.project]?.color }} />
+                              {projectByKey[row.project]?.label || row.project}
                             </span>
                           </td>
                           <td className="px-4 py-2 text-slate-700">{row.itemName}</td>

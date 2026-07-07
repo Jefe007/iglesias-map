@@ -167,6 +167,30 @@ function MapReadyNotifier({ onReady }: { onReady?: (map: L.Map) => void }) {
   return null
 }
 
+// Leaflet sizes its tile grid from the container's dimensions at the moment
+// each layer mounts; it doesn't re-measure on its own afterward. A window
+// resize/orientation change — or a connectivity flip that changes the header
+// (the online-status pill reflows, shifting the map container's height) —
+// left the grid stale, rendering as a blank/broken basemap until a manual
+// resize. invalidateSize() forces Leaflet to re-measure and redraw.
+function InvalidateOnLayoutChange() {
+  const map = useMap()
+  useEffect(() => {
+    const invalidate = () => map.invalidateSize()
+    window.addEventListener('resize', invalidate)
+    window.addEventListener('orientationchange', invalidate)
+    window.addEventListener('online', invalidate)
+    window.addEventListener('offline', invalidate)
+    return () => {
+      window.removeEventListener('resize', invalidate)
+      window.removeEventListener('orientationchange', invalidate)
+      window.removeEventListener('online', invalidate)
+      window.removeEventListener('offline', invalidate)
+    }
+  }, [map])
+  return null
+}
+
 // Temporary on-screen counter for diagnosing offline tile loading in the
 // field, where there's no way to attach devtools. Enabled with ?tiledebug=1.
 function TileDebugOverlay() {
@@ -364,6 +388,7 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
       <HybridLabelsManager />
       <FlyToSelected church={focusChurch ?? selected} />
       <MapReadyNotifier onReady={onMapReady} />
+      <InvalidateOnLayoutChange />
       {tileDebug && <TileDebugOverlay />}
 
       {settingLocationFor && onSetLocation && (
