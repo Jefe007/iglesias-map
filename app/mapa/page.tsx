@@ -10,7 +10,7 @@ import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStore
 import { getChurches as getChurchesOffline, getDistributionsForCenter, getCenterProjects, getAllDistributionItems, getItems, getProjects } from '@/lib/offlineStore'
 import { useOfflineStatus } from '@/lib/useOfflineStatus'
 import { showToast } from '@/lib/toast'
-import { IconSearch, IconX, IconMapPin, IconHospital, IconCompass, IconUser, IconUsers, IconClock } from '@/lib/icons'
+import { IconSearch, IconX, IconMapPin, IconHospital, IconCompass, IconUser, IconUsers, IconClock, IconSatelliteDish } from '@/lib/icons'
 import MapLegend from '@/components/MapLegend'
 import DriversPanel from '@/components/DriversPanel'
 import NavMenu from '@/components/NavMenu'
@@ -280,6 +280,17 @@ function MapaPageInner() {
       await updateChurch(church.id, { is_distribution_center: !church.is_distribution_center })
       fetchChurches()
       setSelected(prev => prev?.id === church.id ? { ...prev, is_distribution_center: !prev.is_distribution_center } : prev)
+    } catch (e) {
+      showToast((e as Error).message, 'error')
+    }
+  }
+
+  const toggleStarlink = async (church: Church) => {
+    try {
+      await updateChurch(church.id, { has_starlink: !church.has_starlink })
+      fetchChurches()
+      setSelected(prev => prev?.id === church.id ? { ...prev, has_starlink: !prev.has_starlink } : prev)
+      showToast(church.has_starlink ? 'Starlink unmarked' : 'Starlink marked')
     } catch (e) {
       showToast((e as Error).message, 'error')
     }
@@ -928,6 +939,21 @@ function MapaPageInner() {
                       )
                     })}
                   </div>
+                </div>
+              )}
+
+              {selected.is_distribution_center && (
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-gray-500 text-xs uppercase font-semibold">
+                    <IconSatelliteDish className="w-3.5 h-3.5" /> Starlink
+                  </div>
+                  <button
+                    disabled={!canManageProjects}
+                    onClick={() => toggleStarlink(selected)}
+                    className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${selected.has_starlink ? 'text-white border-transparent bg-blue-600' : 'text-slate-500 border-slate-300 bg-white'} ${!canManageProjects ? 'cursor-default' : 'hover:opacity-90'}`}
+                  >
+                    {selected.has_starlink ? 'Equipped' : 'Not equipped'}
+                  </button>
                 </div>
               )}
 

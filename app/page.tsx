@@ -6,7 +6,7 @@ import { Church, Project, ProjectDef, ServiceRequest } from '@/lib/supabase'
 import { getChurches, getAllDistributions, getRequests, getCenterProjects, getProjects } from '@/lib/offlineStore'
 import { useOfflineStatus } from '@/lib/useOfflineStatus'
 import { useEditRole } from '@/lib/useEditRole'
-import { IconSearch, IconX, IconUser, IconCompass } from '@/lib/icons'
+import { IconSearch, IconX, IconUser, IconCompass, IconSatelliteDish } from '@/lib/icons'
 import { LOCATION_COLORS } from '@/lib/locationTypes'
 import PasscodeGate from '@/components/PasscodeGate'
 import NavMenu from '@/components/NavMenu'
@@ -161,11 +161,18 @@ export default function InicioPage() {
                       <Link href={`/mapa?center=${church.id}`} className="block p-4 pb-2 flex-1">
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <h2 className="font-bold text-slate-800 text-sm leading-tight">{church.name}</h2>
-                          {pendingInfo && (
-                            <span className={`flex-shrink-0 text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full whitespace-nowrap ${pendingInfo.urgent ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                              {pendingInfo.count} request{pendingInfo.count !== 1 ? 's' : ''}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {church.has_starlink && (
+                              <span title="Starlink equipped" className="flex items-center gap-1 text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full whitespace-nowrap bg-blue-100 text-blue-700">
+                                <IconSatelliteDish className="w-3 h-3" /> Starlink
+                              </span>
+                            )}
+                            {pendingInfo && (
+                              <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full whitespace-nowrap ${pendingInfo.urgent ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {pendingInfo.count} request{pendingInfo.count !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         {church.pastor_name && (
                           <p className="flex items-center gap-1 text-xs text-slate-500 mb-2"><IconUser className="w-3 h-3" /> {church.pastor_name} · {church.parish}</p>

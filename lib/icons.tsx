@@ -91,6 +91,14 @@ export function IconMenu({ className = base }: IconProps) {
   )
 }
 
+export function IconSatelliteDish({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M4 10a7.3 7.3 0 0 0 10 10Z" /><path d="M9 15 3 9a10.7 10.7 0 0 1 15-.01" /><path d="M17 6a10.7 10.7 0 0 1 0 13" /><circle cx="9" cy="15" r="1" />
+    </svg>
+  )
+}
+
 export function IconLock({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>

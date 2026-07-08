@@ -17,6 +17,7 @@ type FormState = {
   notes: string
   marker_type: Church['marker_type']
   is_distribution_center: boolean
+  has_starlink: boolean
   distribution_center_id: string
   lat: string
   lng: string
@@ -27,7 +28,7 @@ function emptyForm(defaultParish: string): FormState {
   return {
     name: '', pastor_name: '', phone: '', email: '',
     parish: defaultParish, address: '', notes: '',
-    marker_type: 'church', is_distribution_center: false,
+    marker_type: 'church', is_distribution_center: false, has_starlink: false,
     distribution_center_id: '', lat: '', lng: '', image_url: '',
   }
 }
@@ -43,6 +44,7 @@ function fromChurch(church: Church): FormState {
     notes: church.notes || '',
     marker_type: church.marker_type,
     is_distribution_center: church.is_distribution_center,
+    has_starlink: church.has_starlink,
     distribution_center_id: church.distribution_center_id || '',
     lat: church.lat != null ? String(church.lat) : '',
     lng: church.lng != null ? String(church.lng) : '',
@@ -132,6 +134,10 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
         notes: form.notes.trim() || null,
         marker_type: form.marker_type,
         is_distribution_center: isChurch && form.is_distribution_center,
+        // Only meaningful for a hub (a distribution-center church); clear it
+        // otherwise so toggling a point back out of that role doesn't leave a
+        // stale "has Starlink" flag on a plain church record.
+        has_starlink: isChurch && form.is_distribution_center && form.has_starlink,
         distribution_center_id: isChurch && !form.is_distribution_center ? (form.distribution_center_id || null) : null,
         lat: form.lat ? Number(form.lat) : null,
         lng: form.lng ? Number(form.lng) : null,
@@ -271,6 +277,21 @@ export default function ChurchForm({ church, centers, parishes, onClose, onSaved
                       style={{ accentColor: 'var(--olive)' }}
                     />
                     <span className="text-sm text-gray-700">Distribution center</span>
+                  </label>
+                </Field>
+              )}
+
+              {isChurch && form.is_distribution_center && (
+                <Field label="Equipment">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={form.has_starlink}
+                      onChange={e => setForm(f => ({ ...f, has_starlink: e.target.checked }))}
+                      className="w-4 h-4"
+                      style={{ accentColor: 'var(--olive)' }}
+                    />
+                    <span className="text-sm text-gray-700">Starlink antenna installed</span>
                   </label>
                 </Field>
               )}

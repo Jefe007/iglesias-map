@@ -6,7 +6,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents,
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Church } from '@/lib/supabase'
-import { IconHospital, IconMapPin, IconUser, IconMessageCircle, IconCheck, IconClock, IconCompass, IconX } from '@/lib/icons'
+import { IconHospital, IconMapPin, IconUser, IconMessageCircle, IconCheck, IconClock, IconCompass, IconX, IconSatelliteDish } from '@/lib/icons'
 import { isSpecialLocation, LOCATION_LABELS, LOCATION_COLORS, type SpecialLocationType } from '@/lib/locationTypes'
 
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -501,8 +501,15 @@ export default function ChurchMap({ churches, allChurches, selected, focusChurch
                   ) : (
                     <>
                       {church.is_distribution_center && (
-                        <div className="flex items-center gap-1.5 text-red-600 text-xs font-bold mb-1">
-                          <span className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" /> Distribution Center
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <div className="flex items-center gap-1.5 text-red-600 text-xs font-bold">
+                            <span className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" /> Distribution Center
+                          </div>
+                          {church.has_starlink && (
+                            <div className="flex items-center gap-1 text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                              <IconSatelliteDish className="w-3 h-3" /> Starlink
+                            </div>
+                          )}
                         </div>
                       )}
                       <div className="font-bold text-sm leading-tight">{church.name}</div>

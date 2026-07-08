@@ -41,6 +41,7 @@ export type Church = {
   lat: number | null
   lng: number | null
   is_distribution_center: boolean
+  has_starlink: boolean
   notes: string | null
   geocode_status: 'validado' | 'pendiente' | 'aproximado' | null
   distribution_center_id: string | null
