@@ -6,8 +6,9 @@ import { Church, Project, ProjectDef, ServiceRequest } from '@/lib/supabase'
 import { getChurches, getAllDistributions, getRequests, getCenterProjects, getProjects } from '@/lib/offlineStore'
 import { useOfflineStatus } from '@/lib/useOfflineStatus'
 import { useEditRole } from '@/lib/useEditRole'
-import { IconSearch, IconX, IconUser, IconCompass, IconSatelliteDish } from '@/lib/icons'
+import { IconSearch, IconX, IconUser, IconCompass, IconSatelliteDish, IconMessageCircle } from '@/lib/icons'
 import { LOCATION_COLORS } from '@/lib/locationTypes'
+import { buildHubShareText, whatsappShareUrl } from '@/lib/shareHub'
 import PasscodeGate from '@/components/PasscodeGate'
 import NavMenu from '@/components/NavMenu'
 
@@ -31,6 +32,19 @@ function GoogleMapsButton({ lat, lng }: { lat: number; lng: number }) {
       className="inline-flex items-center gap-1.5 flex-shrink-0 text-[11px] font-medium text-white bg-[#1a73e8] hover:bg-[#1765cc] px-2.5 py-1 rounded-full transition-colors whitespace-nowrap"
     >
       <IconCompass className="w-3 h-3" /> Google Maps
+    </a>
+  )
+}
+
+function WhatsAppShareButton({ church, activeProjectLabels }: { church: Church; activeProjectLabels: string[] }) {
+  return (
+    <a
+      href={whatsappShareUrl(buildHubShareText(church, activeProjectLabels))}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1.5 flex-shrink-0 text-[11px] font-medium text-white bg-[#25D366] hover:bg-[#1ebe57] px-2.5 py-1 rounded-full transition-colors whitespace-nowrap"
+    >
+      <IconMessageCircle className="w-3 h-3" /> Share
     </a>
   )
 }
@@ -196,7 +210,15 @@ export default function InicioPage() {
                         <p className="text-xs text-slate-400 font-data truncate">
                           {last ? `Last delivery: ${formatRelativeDate(last)}` : 'No deliveries recorded'}
                         </p>
-                        {church.lat && church.lng && <GoogleMapsButton lat={Number(church.lat)} lng={Number(church.lng)} />}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {church.lat && church.lng && (
+                            <WhatsAppShareButton
+                              church={church}
+                              activeProjectLabels={activeProjects.filter(p => churchProjectKeys.includes(p.key)).map(p => p.label)}
+                            />
+                          )}
+                          {church.lat && church.lng && <GoogleMapsButton lat={Number(church.lat)} lng={Number(church.lng)} />}
+                        </div>
                       </div>
                     </div>
                   )

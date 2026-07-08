@@ -10,12 +10,13 @@ import { updateChurch, deleteChurch, verifyPasscode, getStoredPasscode, setStore
 import { getChurches as getChurchesOffline, getDistributionsForCenter, getCenterProjects, getAllDistributionItems, getItems, getProjects } from '@/lib/offlineStore'
 import { useOfflineStatus } from '@/lib/useOfflineStatus'
 import { showToast } from '@/lib/toast'
-import { IconSearch, IconX, IconMapPin, IconHospital, IconCompass, IconUser, IconUsers, IconClock, IconSatelliteDish } from '@/lib/icons'
+import { IconSearch, IconX, IconMapPin, IconHospital, IconCompass, IconUser, IconUsers, IconClock, IconSatelliteDish, IconMessageCircle } from '@/lib/icons'
 import MapLegend from '@/components/MapLegend'
 import DriversPanel from '@/components/DriversPanel'
 import NavMenu from '@/components/NavMenu'
 import { useFocusTrap } from '@/lib/useFocusTrap'
 import { isSpecialLocation, LOCATION_LABELS, LOCATION_COLORS, MARKER_TYPE_LABELS } from '@/lib/locationTypes'
+import { buildHubShareText, whatsappShareUrl } from '@/lib/shareHub'
 
 const ChurchMap = dynamic(() => import('@/components/ChurchMap'), { ssr: false })
 const ChurchForm = dynamic(() => import('@/components/ChurchForm'), { ssr: false })
@@ -913,6 +914,15 @@ function MapaPageInner() {
                     className="flex items-center justify-center gap-1.5 bg-[#1a73e8] hover:bg-[#1765cc] text-white py-2 rounded-lg text-sm font-medium transition-colors"
                   >
                     <IconCompass className="w-4 h-4" /> Open in Google Maps
+                  </a>
+                )}
+                {selected.is_distribution_center && selected.lat && selected.lng && (
+                  <a
+                    href={whatsappShareUrl(buildHubShareText(selected, activeProjects.filter(p => (centerProjects[selected.id] || []).includes(p.key)).map(p => p.label)))}
+                    target="_blank" rel="noreferrer"
+                    className="flex items-center justify-center gap-1.5 bg-[#25D366] hover:bg-[#1ebe57] text-white py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <IconMessageCircle className="w-4 h-4" /> Share via WhatsApp
                   </a>
                 )}
               </div>
